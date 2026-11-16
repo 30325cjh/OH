@@ -51,7 +51,15 @@ class OverlayService : Service() {
     private val pink = 0xFFE86AB2.toInt()
     private var sequenceToken = 0
     private var inputRow: LinearLayout? = null
-    private var dialogueQueue: List<Pair<String, String>> = emptyList()
+    private var historyContainer: ScrollView? = null
+    private var panelWindowParams: WindowManager.LayoutParams? = null
+    private data class DialogueLine(
+        val text: String,
+        val imagePath: String,
+        val effect: String? = null,
+        val voice: String? = null
+    )
+    private var dialogueQueue: List<DialogueLine> = emptyList()
     private var dialogueIndex = 0
     private var typingRunnable: Runnable? = null
     private var typingFullText = ""
@@ -167,7 +175,7 @@ class OverlayService : Service() {
             setImageAsset("hanako/images/smile.PNG")
         }
         portrait = image
-        stage.addView(image, LinearLayout.LayoutParams(-1, dp(350)))
+        stage.addView(image, LinearLayout.LayoutParams(-1, dp(440)))
         val line = TextView(this).apply {
             text = "반가워요, 센세"
             textSize = 17f
@@ -183,6 +191,7 @@ class OverlayService : Service() {
         val historyScroll = ScrollView(this).apply { isFillViewport = true; background = rounded(Color.BLACK, 12) }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
         historyScroll.addView(list); messages = list; scroll = historyScroll
+        historyContainer = historyScroll
         root.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
@@ -194,34 +203,55 @@ class OverlayService : Service() {
             }
         }
         input = edit
+        edit.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_DOWN) enablePanelInput(edit)
+            false
+        }
         row.addView(edit, LinearLayout.LayoutParams(0, dp(48), 1f))
         row.addView(Button(this).apply { text = "전송"; setOnClickListener { sendMessage() } }, LinearLayout.LayoutParams(dp(68), dp(48)))
         root.addView(row)
         inputRow = row
         panel = root
         val w = minOf(dp(620), resources.displayMetrics.widthPixels - dp(24))
-        wm.addView(root, WindowManager.LayoutParams(w, dp(560), overlayType(),
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = dp(16) })
-
+        val params = WindowManager.LayoutParams(w, dp(650), overlayType(),
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(16)
+        }
+        panelWindowParams = params
+        wm.addView(root, params)
         runLoginSequence()
+    }
+
+    private fun enablePanelInput(edit: EditText) {
+        val params = panelWindowParams ?: return
+        if (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+            panel?.let { try { wm.updateViewLayout(it, params) } catch (_: Exception) {} }
+        }
         edit.requestFocus()
         handler.postDelayed({
-            try { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT) }
-            catch (_: Exception) {}
-        }, 250)
+            try {
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                    .showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
+            } catch (_: Exception) {}
+        }, 120)
     }
 
     private fun ImageView.setImageAsset(path: String) {
         try { assets.open(path).use { setImageBitmap(BitmapFactory.decodeStream(it)) } } catch (_: Exception) {}
     }
 
-    private fun showDialogueSequence(items: List<Pair<String, String>>) {
+    private fun showDialogueSequence(items: List<DialogueLine>) {
         if (items.isEmpty()) return
         dialogueQueue = items
         dialogueIndex = 0
         inputRow?.visibility = android.view.View.GONE
-        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(350) }
+        historyContainer?.visibility = android.view.View.GONE
+        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(440) }
         showCurrentDialogue()
     }
 
@@ -230,8 +260,11 @@ class OverlayService : Service() {
             finishDialogueSequence()
             return
         }
-        val (text, imagePath) = dialogueQueue[dialogueIndex]
-        portrait?.setImageAsset(imagePath)
+        val line = dialogueQueue[dialogueIndex]
+        val text = line.text
+        portrait?.setImageAsset(line.imagePath)
+        line.effect?.let { playEffect(it) }
+        line.voice?.let { playVoice(it) }
         portrait?.animate()?.cancel()
         portrait?.scaleX = 1f
         portrait?.scaleY = 1f
@@ -272,23 +305,35 @@ class OverlayService : Service() {
         dialogueQueue = emptyList()
         isTyping = false
         inputRow?.visibility = android.view.View.VISIBLE
+        historyContainer?.visibility = android.view.View.VISIBLE
         portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(178) }
         dialogue?.text = "센세, 계속 이야기해요. ♡"
     }
 
     private fun runLoginSequence() {
-        val token = ++sequenceToken
-        playEffect("tell.mp3")
-        playVoice("greeting.mp3")
+        sequenceToken++
         showDialogueSequence(listOf(
-            "반가워요, 센세." to "hanako/images/smile.PNG",
-            "오늘은 무엇을 할까요, 센세? ♡" to "hanako/images/play_dump.PNG"
+            DialogueLine(
+                "반가워요, 센세.",
+                "hanako/images/smile.PNG",
+                effect = "tell.mp3",
+                voice = "greeting.mp3"
+            ),
+            DialogueLine(
+                "오늘은 무엇을 할까요, 센세? ♡",
+                "hanako/images/play_dump.PNG",
+                effect = "why.mp3",
+                voice = "asked.mp3"
+            )
         ))
-        handler.postDelayed({
-            if (token != sequenceToken || panel == null) return@postDelayed
-            playEffect("why.mp3")
-            playVoice("asked.mp3")
-        }, 2600)
+    }
+
+    private fun splitIntoSentences(text: String): List<String> {
+        return text
+            .replace("\\r", "")
+            .split(Regex("(?<=[.!?。！？])\\s+|\\n+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
     }
 
     private fun closePanel() {
@@ -301,7 +346,8 @@ class OverlayService : Service() {
         voicePlayer?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
         voicePlayer = null
         panel?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        panel = null; messages = null; scroll = null; input = null; inputRow = null; portrait = null; dialogue = null
+        panel = null; panelWindowParams = null; messages = null; scroll = null; historyContainer = null
+        input = null; inputRow = null; portrait = null; dialogue = null
         bubble?.visibility = android.view.View.VISIBLE
     }
 
@@ -387,9 +433,9 @@ class OverlayService : Service() {
                         answer.substring(nStart + narrationMarker.length, cStart).trim() else ""
                     val characterText = if (cStart >= 0)
                         answer.substring(cStart + characterMarker.length).trim() else answer
-                    val scenes = mutableListOf<Pair<String, String>>()
-                    if (narrationText.isNotEmpty()) scenes.add(narrationText to "hanako/images/default.JPEG")
-                    if (characterText.isNotEmpty()) scenes.add(characterText to "hanako/images/play_dump.PNG")
+                    val scenes = splitIntoSentences(characterText).map { sentence ->
+                        DialogueLine(sentence, "hanako/images/play_dump.PNG")
+                    }
                     showDialogueSequence(scenes)
                 }
             } catch (e: Exception) {
