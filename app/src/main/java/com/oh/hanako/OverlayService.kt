@@ -210,6 +210,11 @@ class OverlayService : Service() {
             if (event.action == android.view.MotionEvent.ACTION_DOWN) enablePanelInput(edit)
             false
         }
+        row.addView(Button(this).apply {
+            text = "▶"
+            textSize = 18f
+            setOnClickListener { replayConversation() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         row.addView(edit, LinearLayout.LayoutParams(0, dp(48), 1f))
         row.addView(Button(this).apply { text = "전송"; setOnClickListener { sendMessage() } }, LinearLayout.LayoutParams(dp(68), dp(48)))
         root.addView(row)
@@ -351,6 +356,34 @@ class OverlayService : Service() {
             dialogueIndex++
             showCurrentDialogue()
         }
+    }
+
+    private fun replayConversation() {
+        val replayLines = mutableListOf<DialogueLine>()
+        for (i in 0 until history.length()) {
+            val item = history.optJSONObject(i) ?: continue
+            val role = item.optString("role")
+            val raw = item.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty().trim()
+            if (raw.isBlank()) continue
+
+            if (role == "user") {
+                // 센세의 입력은 괄호로 표시하고 음성/효과음을 재생하지 않는다.
+                replayLines.add(DialogueLine("($raw)", "hanako/images/play_dump.PNG"))
+            } else if (role == "model") {
+                val marker = "하나코:"
+                val markerIndex = raw.indexOf(marker)
+                val characterText = if (markerIndex >= 0) {
+                    raw.substring(markerIndex + marker.length).trim()
+                } else {
+                    raw.substringAfter("나레이션:", raw).trim()
+                }
+                val cleanCharacterText = removeSoundMarkers(characterText)
+                splitIntoSentences(cleanCharacterText).forEach { sentence ->
+                    replayLines.add(DialogueLine(sentence, "hanako/images/play_dump.PNG"))
+                }
+            }
+        }
+        if (replayLines.isNotEmpty()) showDialogueSequence(replayLines)
     }
 
     private fun finishDialogueSequence() {
