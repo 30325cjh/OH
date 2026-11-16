@@ -599,21 +599,21 @@ class OverlayService : Service() {
             }
             currentText.setLength(0)
         }
-        inputText.replace("\\r", "").split("\\n").forEach { rawLine ->
+        inputText.replace("\r", "").split("\n").forEach { rawLine ->
             val line = when {
                 rawLine.startsWith("@하나코:") -> "draft" to rawLine.removePrefix("@하나코:").trim()
                 rawLine.startsWith("@:") -> "user" to rawLine.removePrefix("@:").trim()
                 else -> "user" to rawLine.trim()
             }
             if (line.second.isBlank()) {
-                if (currentText.isNotEmpty()) currentText.append("\\n")
+                if (currentText.isNotEmpty()) currentText.append("\n")
                 return@forEach
             }
             if (currentRole != line.first) {
                 flush()
                 currentRole = line.first
             }
-            if (currentText.isNotEmpty()) currentText.append("\\n")
+            if (currentText.isNotEmpty()) currentText.append("\n")
             currentText.append(line.second)
         }
         flush()
@@ -752,7 +752,7 @@ class OverlayService : Service() {
                         .put("contents", apiContents)
                         .put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
                     val response = requestGemini(key, body) { status ->
-                        handler.post { loading.text = "$status · \${turnIndex + 1}/\${segments.size}" }
+                        handler.post { loading.text = "$status · ${turnIndex + 1}/${segments.size}" }
                     }
                     val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                         ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
