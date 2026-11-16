@@ -394,7 +394,7 @@ class OverlayService : Service() {
             for (attempt in 0..2) {
                 var connection: HttpURLConnection? = null
                 try {
-                    connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/\${model}:generateContent").openConnection() as HttpURLConnection).apply {
+                    connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         connectTimeout = 30000
                         readTimeout = 120000
