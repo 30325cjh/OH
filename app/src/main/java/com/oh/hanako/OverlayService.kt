@@ -387,17 +387,23 @@ class OverlayService : Service() {
         }
     }
 
-    private fun requestGemini(key: String, body: JSONObject): JSONObject {
+    private fun requestGemini(
+        key: String,
+        body: JSONObject,
+        onRetry: (String) -> Unit
+    ): JSONObject {
         val models = listOf("gemini-3.5-flash-lite", "gemini-3.8-flash")
-        var lastError = "Gemini API 연결에 실패했습니다."
+        var lastError: Exception = IllegalStateException("Gemini API 연결에 실패했습니다.")
+        var attemptNumber = 0
         for (model in models) {
             for (attempt in 0..2) {
+                attemptNumber++
                 var connection: HttpURLConnection? = null
                 try {
                     connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
-                        connectTimeout = 30000
-                        readTimeout = 120000
+                        connectTimeout = 10000
+                        readTimeout = 10000
                         doOutput = true
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
                         setRequestProperty("x-goog-api-key", key)
@@ -407,16 +413,23 @@ class OverlayService : Service() {
                     if (code in 200..299) {
                         return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                     }
-                    lastError = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-                    if (code != 503) throw IllegalStateException(lastError)
-                    if (attempt < 2) Thread.sleep(if (attempt == 0) 1500L else 3000L)
+                    val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                    lastError = IllegalStateException(errorText)
+                    if (code !in listOf(408, 429, 500, 502, 503, 504)) throw lastError
+                } catch (e: java.net.SocketTimeoutException) {
+                    lastError = e
+                } catch (e: java.io.IOException) {
+                    lastError = e
                 } finally {
                     connection?.disconnect()
                 }
+                if (attempt < 2 || model != models.last()) {
+                    onRetry("응답이 늦어 다시 요청하고 있어요♡ ($attemptNumber회차)")
+                    Thread.sleep(1000L)
+                }
             }
-            // 첫 모델에서 503이 계속되면 두 번째 모델로 전환합니다.
         }
-        throw IllegalStateException(lastError)
+        throw IllegalStateException("10초 안에 응답을 받지 못해 재시도했지만 실패했어요. " + (lastError.message ?: lastError.javaClass.simpleName), lastError)
     }
 
     private fun sendMessage() {
@@ -455,7 +468,9 @@ class OverlayService : Service() {
 하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다."""
                 val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                     .put("contents", history).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
-                val response = requestGemini(key, body)
+                val response = requestGemini(key, body) { status ->
+                    handler.post { loading.text = status }
+                }
                 val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                     ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
                 val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
