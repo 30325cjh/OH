@@ -219,7 +219,7 @@ class OverlayService : Service() {
                 if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                     if (event.isShiftPressed) {
                         val start = selectionStart.coerceAtLeast(0)
-                        text?.insert(start, "\\n")
+                        text?.insert(start, "\n")
                     } else {
                         sendMessage()
                     }
@@ -572,21 +572,21 @@ class OverlayService : Service() {
             currentText.setLength(0)
         }
 
-        inputText.replace("\\r", "").split("\\n").forEach { rawLine ->
+        inputText.replace("\r", "").split("\n").forEach { rawLine ->
             val line = when {
                 rawLine.startsWith("@하나코:") -> "draft" to rawLine.removePrefix("@하나코:").trim()
                 rawLine.startsWith("@:") -> "user" to rawLine.removePrefix("@:").trim()
                 else -> "user" to rawLine.trim()
             }
             if (line.second.isBlank()) {
-                if (currentText.isNotEmpty()) currentText.append("\\n")
+                if (currentText.isNotEmpty()) currentText.append("\n")
                 return@forEach
             }
             if (currentRole != line.first) {
                 flush()
                 currentRole = line.first
             }
-            if (currentText.isNotEmpty()) currentText.append("\\n")
+            if (currentText.isNotEmpty()) currentText.append("\n")
             currentText.append(line.second)
         }
         flush()
