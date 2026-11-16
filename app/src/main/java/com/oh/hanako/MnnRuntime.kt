@@ -1,19 +1,25 @@
 package com.oh.hanako
 
+import android.content.Context
+import com.mnn.sdk.MNNEngine
+
 /**
- * Loads the MNN core JNI library shipped by the Android AAR.
- * The MNN Java API is intentionally not referenced here: the published
- * AAR does not expose the MNNNetNative class used by the previous draft.
+ * Initializes the pinned MNN 3.6.1 Android runtime and reports its actual version.
+ * This verifies the native engine only; Irodori model orchestration is a separate stage.
  */
 object MnnRuntime {
     data class Status(val available: Boolean, val detail: String)
 
-    fun check(): Status = try {
-        System.loadLibrary("MNN")
-        Status(true, "MNN native library loaded")
+    fun check(context: Context): Status = try {
+        val version = MNNEngine.initialize(context.applicationContext).getVersion()
+        if (version == "3.6.1") {
+            Status(true, "MNN $version native runtime loaded")
+        } else {
+            Status(false, "Unexpected MNN runtime version: $version (expected 3.6.1)")
+        }
     } catch (error: UnsatisfiedLinkError) {
-        Status(false, "MNN native library unavailable: ${error.message ?: "unknown linker error"}")
-    } catch (error: SecurityException) {
-        Status(false, "MNN native library blocked: ${error.message ?: "security error"}")
+        Status(false, "MNN native runtime unavailable: ${error.message ?: "linker error"}")
+    } catch (error: Exception) {
+        Status(false, "MNN runtime initialization failed: ${error.message ?: error.javaClass.simpleName}")
     }
 }
