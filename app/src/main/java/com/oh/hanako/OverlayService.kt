@@ -544,9 +544,6 @@ class OverlayService : Service() {
         val text = input?.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
         input?.setText("")
-        addMessage(text, true)
-        history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
-        while (history.length() > 20) history.remove(0)
 
         val directText = extractDirectHanakoText(text)
         if (!directText.isNullOrBlank()) {
@@ -557,6 +554,10 @@ class OverlayService : Service() {
             showDialogueSequence(listOf(DialogueLine(directText, "hanako/images/play_dump.PNG")))
             return
         }
+
+        addMessage(text, true)
+        history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
+        while (history.length() > 20) history.remove(0)
 
         val loading = addMessage("하나코가 생각 중이에요♡", false)
         val key = BuildConfig.GEMINI_API_KEY.trim()
