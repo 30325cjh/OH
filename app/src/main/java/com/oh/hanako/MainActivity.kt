@@ -20,6 +20,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var engineStatus: TextView
     private var ageVerifiedThisLaunch = false
+    @Volatile private var isModelInstalling = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,6 +109,24 @@ class MainActivity : Activity() {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
                 } else {
                     status.text = "오버레이 권한이 허용되어 있어요."
+                }
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "Irodori 음성 모델 설치 (약 2GB)"
+            setOnClickListener {
+                if (!isModelInstalling) {
+                    isModelInstalling = true
+                    status.text = "Irodori 모델 설치 준비 중..."
+                    Thread {
+                        val result = IrodoriModelInstaller.install(this@MainActivity) { message ->
+                            runOnUiThread { if (::status.isInitialized) status.text = message }
+                        }
+                        runOnUiThread {
+                            isModelInstalling = false
+                            if (::status.isInitialized) status.text = result
+                        }
+                    }.start()
                 }
             }
         })
