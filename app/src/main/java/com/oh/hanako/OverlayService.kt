@@ -201,13 +201,10 @@ class OverlayService : Service() {
         val edit = object : EditText(this) {
             override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
                 if (keyCode == KeyEvent.KEYCODE_ENTER) {
-                    if (event.isShiftPressed) {
-                        val start = selectionStart.coerceAtLeast(0)
-                        val end = selectionEnd.coerceAtLeast(start)
-                        editableText.replace(start, end, "\n")
-                    } else {
-                        sendMessage()
-                    }
+                    // Enter는 전송하지 않고 항상 줄바꿈만 수행한다.
+                    val start = selectionStart.coerceAtLeast(0)
+                    val end = selectionEnd.coerceAtLeast(start)
+                    editableText.replace(start, end, "\n")
                     return true
                 }
                 return super.onKeyDown(keyCode, event)
@@ -228,21 +225,9 @@ class OverlayService : Service() {
             maxHeight = dp(104)
             maxLines = 4
             gravity = Gravity.CENTER_VERTICAL
-            imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
             background = rounded(0xFF302A35.toInt(), 12)
             setPadding(dp(10), dp(7), dp(10), dp(7))
-            setOnEditorActionListener { _, actionId, event ->
-                if (actionId == EditorInfo.IME_ACTION_SEND) {
-                    if (event?.isShiftPressed == true) {
-                        val start = selectionStart.coerceAtLeast(0)
-                        val end = selectionEnd.coerceAtLeast(start)
-                        editableText.replace(start, end, "\n")
-                    } else {
-                        sendMessage()
-                    }
-                    true
-                } else false
-            }
         }
         input = edit
         edit.setOnTouchListener { _, event ->
