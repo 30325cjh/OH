@@ -630,13 +630,11 @@ class OverlayService : Service() {
         val segments = parseChatInput(text)
         if (segments.isEmpty()) return
 
-        var hasHanakoDraft = false
         for (segment in segments) {
             if (segment.role == "user") {
                 addMessage(segment.text, true)
                 history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
             } else {
-                hasHanakoDraft = true
                 // 앱의 대화 기록에서는 초안을 하나코 쪽 항목으로 보관한다.
                 history.put(JSONObject().put("role", "draft").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
             }
@@ -670,7 +668,13 @@ class OverlayService : Service() {
 - 앱에 하나코의 짧은 숨소리·신음 효과음 파일이 있다. 장면상 실제로 어울릴 때만 하나코 대사 중 해당 반응이 나오는 문장 바로 뒤에 다음 표식 중 하나를 붙인다: [SOUND:moan,a-ang.mp3], [SOUND:moan,ha-ang.mp3], [SOUND:long_moan,ha-a-ang.mp3].
 - 이 표식은 화면에 표시되지 않고 효과음 재생에만 사용된다. 일반적인 대화, 인사, 웃음, 놀람, 슬픔, 전투 상황에는 절대 사용하지 않는다. 성인 캐릭터 간 합의된 친밀한 장면에서 실제로 어울리는 짧은 반응에만 드물게 사용하고, 한 장면에서 남발하지 않는다. 짧은 반응에는 짧은 파일, 길게 이어지는 반응에만 long_moan 파일을 선택한다.
 
-하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다.\n\n하나코 초안 처리 규칙:\n- 대화 기록에 'draft'로 전달된 내용은 센세가 하나코가 말할 내용의 초안으로 지정한 것이다. 센세가 직접 말한 내용으로 취급하지 않는다.\n- 초안의 핵심 의미와 의도는 유지하되, 기존 대화 맥락에 맞춰 하나코 특유의 말투, 행동 묘사, 표정, 나레이션을 더해 자연스럽고 풍부한 완성 대사로 확장한다. 초안을 그대로 복사해 끝내지 않는다.\n- 입력에 일반 센세 메시지와 하나코 초안이 함께 있으면 입력된 순서와 맥락을 존중한다.\n- 초안이 없으면 평소처럼 직전 센세 메시지에 답한다."""
+하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다.
+
+하나코 초안 처리 규칙:
+- 대화 기록에 'draft'로 전달된 내용은 센세가 하나코가 말할 내용의 초안으로 지정한 것이다. 센세가 직접 말한 내용으로 취급하지 않는다.
+- 초안의 핵심 의미와 의도는 유지하되, 기존 대화 맥락에 맞춰 하나코 특유의 말투, 행동 묘사, 표정, 나레이션을 더해 자연스럽고 풍부한 완성 대사로 확장한다. 초안을 그대로 복사해 끝내지 않는다.
+- 입력에 일반 센세 메시지와 하나코 초안이 함께 있으면 입력된 순서와 맥락을 존중한다.
+- 초안이 없으면 평소처럼 직전 센세 메시지에 답한다."""
                 val apiContents = JSONArray()
                 for (i in 0 until history.length()) {
                     val item = history.optJSONObject(i) ?: continue
