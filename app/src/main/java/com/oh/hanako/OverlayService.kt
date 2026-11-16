@@ -266,9 +266,10 @@ class OverlayService : Service() {
         var hasContent = false
 
         fun appendParagraphBreak() {
-            while (result.isNotEmpty() && result.last() == ' ') result.delete(result.length - 1, result.length)
-            if (result.isNotEmpty() && result.last() != '\\n') result.append("\\n\\n")
-            while (result.length >= 2 && result.substring(result.length - 2) == "\\n\\n") break
+            while (result.isNotEmpty() && (result.last() == ' ' || result.last() == '\n')) {
+                result.delete(result.length - 1, result.length)
+            }
+            if (result.isNotEmpty()) result.append("\n\n")
         }
 
         for (match in pattern.findAll(raw)) {
