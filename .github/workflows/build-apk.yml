@@ -10,6 +10,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0 ndk;25.1.8937393 cmake;3.22.1'
+      - name: Fetch pinned MNN 3.6.1 Android runtime
+        run: |
+          mkdir -p /tmp/mnn-sdk mnn-android-sdk
+          git -C /tmp/mnn-sdk init
+          git -C /tmp/mnn-sdk remote add origin https://github.com/AdribMahmud101/mnn-android-sdk.git
+          git -C /tmp/mnn-sdk fetch --depth 1 origin 5c8f61f47c1afedf86cd1ae79d6df358613c6436
+          git -C /tmp/mnn-sdk checkout FETCH_HEAD
+          cp -a /tmp/mnn-sdk/mnn-sdk mnn-android-sdk/mnn-sdk
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
