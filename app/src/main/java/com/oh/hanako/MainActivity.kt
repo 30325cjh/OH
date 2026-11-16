@@ -1,6 +1,7 @@
 package com.oh.hanako
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.Intent
@@ -8,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.os.StatFs
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
@@ -130,9 +132,18 @@ class MainActivity : Activity() {
     private fun updateEngineStatus() {
         Thread {
             val result = MnnRuntime.check(applicationContext)
+            val memory = ActivityManager.MemoryInfo()
+            (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
+            val totalRamGb = memory.totalMem / (1024.0 * 1024.0 * 1024.0)
+            val availableRamGb = memory.availMem / (1024.0 * 1024.0 * 1024.0)
+            val modelDir = getExternalFilesDir("models")
+            val storage = StatFs((modelDir ?: filesDir).absolutePath)
+            val freeStorageGb = storage.availableBytes / (1024.0 * 1024.0 * 1024.0)
             runOnUiThread {
                 if (::engineStatus.isInitialized) {
-                    engineStatus.text = "음성 엔진: ${result.detail}"
+                    engineStatus.text = "음성 엔진: ${result.detail}\n" +
+                        "기기 RAM: ${"%.1f".format(totalRamGb)}GB (현재 여유 ${"%.1f".format(availableRamGb)}GB)\n" +
+                        "모델 저장 가능 공간: ${"%.1f".format(freeStorageGb)}GB"
                 }
             }
         }.start()
