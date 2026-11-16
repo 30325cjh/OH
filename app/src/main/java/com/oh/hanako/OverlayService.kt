@@ -416,10 +416,8 @@ class OverlayService : Service() {
                 } else {
                     raw.substringAfter("나레이션:", raw).trim()
                 }
-                val cleanCharacterText = removeSoundMarkers(characterText)
-                splitIntoSentences(cleanCharacterText).forEach { sentence ->
-                    replayLines.add(DialogueLine(sentence, "hanako/images/play_dump.PNG"))
-                }
+                // 원본 응답의 효과음 마커를 해석해 해당 대사 뒤에 다시 연결한다.
+                replayLines.addAll(makeDialogueLinesWithSounds(characterText))
             }
         }
         if (replayLines.isNotEmpty()) showDialogueSequence(replayLines)
@@ -475,7 +473,8 @@ class OverlayService : Service() {
                 val marker = "하나코:"
                 val start = text.indexOf(marker)
                 val characterText = if (start >= 0) text.substring(start + marker.length).trim() else text
-                if (characterText.isNotBlank()) addMessage(characterText, false)
+                val visibleCharacterText = removeSoundMarkers(characterText)
+                if (visibleCharacterText.isNotBlank()) addMessage(visibleCharacterText, false)
             }
         }
     }
@@ -702,6 +701,12 @@ class OverlayService : Service() {
                         apiContents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put(
                             "text", "하나코가 말할 초안(센세의 발언이 아니라 하나코의 대사 초안): $draftText"
                         ))))
+                    } else if (role == "model") {
+                        // 효과음 마커는 앱 내부 재생용이므로 Gemini 대화 문맥에는 전달하지 않는다.
+                        val modelText = parts.optJSONObject(0)?.optString("text").orEmpty()
+                        val cleanItem = JSONObject(item.toString())
+                        cleanItem.put("parts", JSONArray().put(JSONObject().put("text", removeSoundMarkers(modelText))))
+                        apiContents.put(cleanItem)
                     } else {
                         apiContents.put(item)
                     }
@@ -715,8 +720,9 @@ class OverlayService : Service() {
                     ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
                 val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
                 if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
+                // 리플레이에서 효과음을 복원할 수 있도록 원본 마커를 대화 기록에 보존한다.
+                history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
                 val cleanedAnswer = removeSoundMarkers(answer)
-                history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", cleanedAnswer))))
                 while (history.length() > 20) history.remove(0)
                 val characterMarkerForBubble = "하나코:"
                 val characterStartForBubble = cleanedAnswer.indexOf(characterMarkerForBubble)
