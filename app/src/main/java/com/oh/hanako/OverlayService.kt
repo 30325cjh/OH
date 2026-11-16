@@ -503,12 +503,9 @@ class OverlayService : Service() {
 
 
     private fun extractDirectHanakoText(inputText: String): String? {
-        val prefix = "[@하나코:"
+        val prefix = "@하나코:"
         if (!inputText.startsWith(prefix)) return null
-        val closing = inputText.indexOf(']', prefix.length)
-        val inside = if (closing >= 0) inputText.substring(prefix.length, closing) else inputText.substring(prefix.length)
-        val trailing = if (closing >= 0) inputText.substring(closing + 1) else ""
-        return (if (inside.isBlank()) trailing else inside + trailing).trim()
+        return inputText.substring(prefix.length).trim()
     }
 
     private fun removeSoundMarkers(text: String): String {
