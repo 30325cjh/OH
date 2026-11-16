@@ -424,7 +424,7 @@ class OverlayService : Service() {
                     connection?.disconnect()
                 }
                 if (attempt < 2 || model != models.last()) {
-                    onRetry("응답이 늦어 다시 요청하고 있어요♡ ($attemptNumber회차)")
+                    onRetry("응답이 늦어 다시 요청하고 있어요♡ (${attemptNumber}회차)")
                     Thread.sleep(1000L)
                 }
             }
