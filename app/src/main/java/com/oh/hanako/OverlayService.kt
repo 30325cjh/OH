@@ -50,6 +50,13 @@ class OverlayService : Service() {
     private val history = JSONArray()
     private val pink = 0xFFE86AB2.toInt()
     private var sequenceToken = 0
+    private var inputRow: LinearLayout? = null
+    private var dialogueQueue: List<Pair<String, String>> = emptyList()
+    private var dialogueIndex = 0
+    private var typingRunnable: Runnable? = null
+    private var typingFullText = ""
+    private var typingPosition = 0
+    private var isTyping = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,7 +75,6 @@ class OverlayService : Service() {
             startForeground(18, Notification.Builder(this).setSmallIcon(R.drawable.icon)
                 .setContentTitle("하나코가 대기 중입니다").build())
         }
-        startBgm()
         showBubble()
     }
 
@@ -77,9 +83,18 @@ class OverlayService : Service() {
     private fun overlayType() = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
 
     private fun startBgm() {
-        if (bgmPlayer != null) return
-        bgmPlayer = createAssetPlayer("hanako/sounds/bgm.mp3", true, 0.28f)
+        if (bgmPlayer?.isPlaying == true) return
+        if (bgmPlayer == null) bgmPlayer = createAssetPlayer("hanako/sounds/bgm.mp3", true, 0.28f)
         try { bgmPlayer?.start() } catch (_: Exception) { bgmPlayer?.release(); bgmPlayer = null }
+    }
+
+    private fun stopBgm() {
+        bgmPlayer?.let { player ->
+            try {
+                if (player.isPlaying) player.pause()
+                player.seekTo(0)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun createAssetPlayer(path: String, looping: Boolean = false, volume: Float = 1f): MediaPlayer? {
@@ -127,6 +142,7 @@ class OverlayService : Service() {
     private fun showPanel() {
         if (panel != null) { panel?.visibility = android.view.View.VISIBLE; return }
         bubble?.visibility = android.view.View.GONE
+        startBgm()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -151,7 +167,7 @@ class OverlayService : Service() {
             setImageAsset("hanako/images/smile.PNG")
         }
         portrait = image
-        stage.addView(image, LinearLayout.LayoutParams(-1, dp(178)))
+        stage.addView(image, LinearLayout.LayoutParams(-1, dp(300)))
         val line = TextView(this).apply {
             text = "반가워요, 센세"
             textSize = 17f
@@ -161,6 +177,7 @@ class OverlayService : Service() {
         }
         dialogue = line
         stage.addView(line, LinearLayout.LayoutParams(-1, -2))
+        stage.setOnClickListener { advanceDialogue() }
         root.addView(stage, LinearLayout.LayoutParams(-1, -2))
 
         val historyScroll = ScrollView(this).apply { isFillViewport = true; background = rounded(0xFF29232D.toInt(), 12) }
@@ -180,6 +197,7 @@ class OverlayService : Service() {
         row.addView(edit, LinearLayout.LayoutParams(0, dp(48), 1f))
         row.addView(Button(this).apply { text = "전송"; setOnClickListener { sendMessage() } }, LinearLayout.LayoutParams(dp(68), dp(48)))
         root.addView(row)
+        inputRow = row
         panel = root
         val w = minOf(dp(620), resources.displayMetrics.widthPixels - dp(24))
         wm.addView(root, WindowManager.LayoutParams(w, dp(560), overlayType(),
@@ -198,26 +216,76 @@ class OverlayService : Service() {
         try { assets.open(path).use { setImageBitmap(BitmapFactory.decodeStream(it)) } } catch (_: Exception) {}
     }
 
-    private fun runLoginSequence() {
-        val token = ++sequenceToken
-        dialogue?.text = "반가워요, 센세"
-        portrait?.setImageAsset("hanako/images/smile.PNG")
+    private fun showDialogueSequence(items: List<Pair<String, String>>) {
+        if (items.isEmpty()) return
+        dialogueQueue = items
+        dialogueIndex = 0
+        inputRow?.visibility = android.view.View.GONE
+        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(300) }
+        showCurrentDialogue()
+    }
+
+    private fun showCurrentDialogue() {
+        if (dialogueIndex !in dialogueQueue.indices) {
+            finishDialogueSequence()
+            return
+        }
+        val (text, imagePath) = dialogueQueue[dialogueIndex]
+        portrait?.setImageAsset(imagePath)
         portrait?.animate()?.cancel()
         portrait?.scaleX = 1f
         portrait?.scaleY = 1f
-        portrait?.animate()?.scaleX(1.045f)?.scaleY(1.045f)?.setDuration(180)?.withEndAction {
-            portrait?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(180)?.start()
-        }?.start()
+        typingFullText = text
+        typingPosition = 0
+        isTyping = true
+        dialogue?.text = ""
+        typingRunnable?.let { handler.removeCallbacks(it) }
+        val task = object : Runnable {
+            override fun run() {
+                if (!isTyping || dialogueIndex !in dialogueQueue.indices) return
+                typingPosition = (typingPosition + 1).coerceAtMost(typingFullText.length)
+                dialogue?.text = typingFullText.substring(0, typingPosition)
+                if (typingPosition < typingFullText.length) handler.postDelayed(this, 24)
+                else isTyping = false
+            }
+        }
+        typingRunnable = task
+        handler.post(task)
+    }
+
+    private fun advanceDialogue() {
+        if (dialogueQueue.isEmpty()) return
+        if (isTyping) {
+            typingRunnable?.let { handler.removeCallbacks(it) }
+            dialogue?.text = typingFullText
+            typingPosition = typingFullText.length
+            isTyping = false
+        } else {
+            dialogueIndex++
+            showCurrentDialogue()
+        }
+    }
+
+    private fun finishDialogueSequence() {
+        typingRunnable?.let { handler.removeCallbacks(it) }
+        typingRunnable = null
+        dialogueQueue = emptyList()
+        isTyping = false
+        inputRow?.visibility = android.view.View.VISIBLE
+        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(178) }
+        dialogue?.text = "센세, 계속 이야기해요. ♡"
+    }
+
+    private fun runLoginSequence() {
+        val token = ++sequenceToken
         playEffect("tell.mp3")
         playVoice("greeting.mp3")
-
+        showDialogueSequence(listOf(
+            "반가워요, 센세." to "hanako/images/smile.PNG",
+            "오늘은 무엇을 할까요, 센세? ♡" to "hanako/images/play_dump.PNG"
+        ))
         handler.postDelayed({
             if (token != sequenceToken || panel == null) return@postDelayed
-            dialogue?.text = "今日は何をするんですか、センセイ？♡"
-            portrait?.setImageAsset("hanako/images/play_dump.PNG")
-            portrait?.animate()?.cancel()
-            portrait?.scaleX = 1f
-            portrait?.scaleY = 1f
             playEffect("why.mp3")
             playVoice("asked.mp3")
         }, 2600)
@@ -225,10 +293,15 @@ class OverlayService : Service() {
 
     private fun closePanel() {
         sequenceToken++
+        stopBgm()
+        typingRunnable?.let { handler.removeCallbacks(it) }
+        typingRunnable = null
+        dialogueQueue = emptyList()
+        isTyping = false
         voicePlayer?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
         voicePlayer = null
         panel?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        panel = null; messages = null; scroll = null; input = null; portrait = null; dialogue = null
+        panel = null; messages = null; scroll = null; input = null; inputRow = null; portrait = null; dialogue = null
         bubble?.visibility = android.view.View.VISIBLE
     }
 
@@ -310,14 +383,14 @@ class OverlayService : Service() {
                     val characterMarker = "하나코:"
                     val nStart = answer.indexOf(narrationMarker)
                     val cStart = answer.indexOf(characterMarker)
-                    if (nStart >= 0 && cStart > nStart) {
-                        val narrationText = answer.substring(nStart + narrationMarker.length, cStart).trim()
-                        val characterText = answer.substring(cStart + characterMarker.length).trim()
-                        if (narrationText.isNotEmpty()) addMessage(narrationText, false, narration = true)
-                        if (characterText.isNotEmpty()) addMessage(characterText, false)
-                    } else {
-                        addMessage(answer, false)
-                    }
+                    val narrationText = if (nStart >= 0 && cStart > nStart)
+                        answer.substring(nStart + narrationMarker.length, cStart).trim() else ""
+                    val characterText = if (cStart >= 0)
+                        answer.substring(cStart + characterMarker.length).trim() else answer
+                    val scenes = mutableListOf<Pair<String, String>>()
+                    if (narrationText.isNotEmpty()) scenes.add(narrationText to "hanako/images/default.JPEG")
+                    if (characterText.isNotEmpty()) scenes.add(characterText to "hanako/images/play_dump.PNG")
+                    showDialogueSequence(scenes)
                 }
             } catch (e: Exception) {
                 handler.post { removeMessage(loading); addMessage("연결 오류: " + (e.message ?: "알 수 없는 오류"), false) }
