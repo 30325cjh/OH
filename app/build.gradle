@@ -21,3 +21,8 @@ android {
     }
     kotlinOptions { jvmTarget = '17' }
 }
+
+dependencies {
+    // Alibaba MNN Android runtime (AAR); model inference will be wired in the next stage.
+    implementation 'com.alibaba.android:mnn:0.0.8'
+}
