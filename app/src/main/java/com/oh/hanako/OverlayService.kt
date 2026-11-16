@@ -614,6 +614,35 @@ class OverlayService : Service() {
             .replace(text, "")
     }
 
+    // 생성형 이미지 API 없이 문장에 포함된 감정·상황 단어로 기존 표정을 선택한다.
+    private fun selectPortraitForText(text: String): String {
+        val value = text.lowercase()
+        val embarrassed = Regex(
+            "부끄|부끄럽|당황|얼굴이 빨개|볼이 붉|수줍|민망|쑥스럽|창피|두근|설레|들켰|\uD83D\uDE33|\uD83D\uDE0A"
+        )
+        val cheerful = Regex(
+            "기뻐|기쁘|좋아|반가|행복|웃|미소|즐겁|신나|다행|고마워|감사|축하|반갑|\uD83D\uDE04|\uD83D\uDE0D|♡"
+        )
+        val teasing = Regex(
+            "장난|놀리|능청|짓궂|의미심장|유혹|도발|흥미롭|재미있|재밌|수상한|싱긋|씨익|흐응|후후|호호"
+        )
+        val surprised = Regex(
+            "깜짝|놀라|놀랐|충격|어머|세상에|정말이요\?|진짜요\?|설마|믿을 수 없"
+        )
+        val confident = Regex(
+            "자신 있|자신만만|당연하|물론이죠|맡겨|확신|승리|성공|해냈|완벽|흥"
+        )
+
+        return when {
+            embarrassed.containsMatchIn(value) -> "hanako/images/embarrassed.PNG"
+            cheerful.containsMatchIn(value) -> "hanako/images/smile.PNG"
+            teasing.containsMatchIn(value) -> "hanako/images/confident.PNG"
+            surprised.containsMatchIn(value) -> "hanako/images/play_dump.PNG"
+            confident.containsMatchIn(value) -> "hanako/images/confident.PNG"
+            else -> "hanako/images/default.JPEG"
+        }
+    }
+
     private fun makeDialogueLinesWithSounds(raw: String): List<DialogueLine> {
         val marker = Regex("\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\.mp3\\]", RegexOption.IGNORE_CASE)
         val result = mutableListOf<DialogueLine>()
@@ -625,14 +654,14 @@ class OverlayService : Service() {
             sentences.forEachIndexed { index, sentence ->
                 result.add(DialogueLine(
                     sentence,
-                    "hanako/images/play_dump.PNG",
+                    selectPortraitForText(sentence),
                     effect = if (index == sentences.lastIndex) soundFile else null
                 ))
             }
             cursor = match.range.last + 1
         }
         splitIntoSentences(raw.substring(cursor)).forEach { sentence ->
-            result.add(DialogueLine(sentence, "hanako/images/play_dump.PNG"))
+            result.add(DialogueLine(sentence, selectPortraitForText(sentence)))
         }
         return result
     }
