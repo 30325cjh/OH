@@ -146,7 +146,7 @@ class OverlayService : Service() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = rounded(0xFF17131A.toInt(), 20)
+            background = rounded(Color.BLACK, 20)
             elevation = dp(14).toFloat()
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -159,7 +159,7 @@ class OverlayService : Service() {
         val stage = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = rounded(0xFF29232D.toInt(), 14)
+            background = rounded(Color.BLACK, 14)
             setPadding(dp(8), dp(6), dp(8), dp(8))
         }
         val image = ImageView(this).apply {
@@ -167,7 +167,7 @@ class OverlayService : Service() {
             setImageAsset("hanako/images/smile.PNG")
         }
         portrait = image
-        stage.addView(image, LinearLayout.LayoutParams(-1, dp(300)))
+        stage.addView(image, LinearLayout.LayoutParams(-1, dp(350)))
         val line = TextView(this).apply {
             text = "반가워요, 센세"
             textSize = 17f
@@ -180,7 +180,7 @@ class OverlayService : Service() {
         stage.setOnClickListener { advanceDialogue() }
         root.addView(stage, LinearLayout.LayoutParams(-1, -2))
 
-        val historyScroll = ScrollView(this).apply { isFillViewport = true; background = rounded(0xFF29232D.toInt(), 12) }
+        val historyScroll = ScrollView(this).apply { isFillViewport = true; background = rounded(Color.BLACK, 12) }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
         historyScroll.addView(list); messages = list; scroll = historyScroll
         root.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -221,7 +221,7 @@ class OverlayService : Service() {
         dialogueQueue = items
         dialogueIndex = 0
         inputRow?.visibility = android.view.View.GONE
-        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(300) }
+        portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(350) }
         showCurrentDialogue()
     }
 
