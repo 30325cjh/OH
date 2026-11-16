@@ -65,6 +65,7 @@ class OverlayService : Service() {
     private var dialogueQueue: List<DialogueLine> = emptyList()
     private var dialogueIndex = 0
     private var typingRunnable: Runnable? = null
+    private var autoAdvanceRunnable: Runnable? = null
     private var typingFullText = ""
     private var typingPosition = 0
     private var isTyping = false
@@ -339,6 +340,8 @@ class OverlayService : Service() {
     }
 
     private fun showCurrentDialogue() {
+        autoAdvanceRunnable?.let { handler.removeCallbacks(it) }
+        autoAdvanceRunnable = null
         if (dialogueIndex !in dialogueQueue.indices) {
             finishDialogueSequence()
             return
@@ -361,12 +364,29 @@ class OverlayService : Service() {
                 if (!isTyping || dialogueIndex !in dialogueQueue.indices) return
                 typingPosition = (typingPosition + 1).coerceAtMost(typingFullText.length)
                 dialogue?.text = formatCharacterText(typingFullText.substring(0, typingPosition))
-                if (typingPosition < typingFullText.length) handler.postDelayed(this, 24)
-                else isTyping = false
+                if (typingPosition < typingFullText.length) {
+                    handler.postDelayed(this, 24)
+                } else {
+                    isTyping = false
+                    scheduleDialogueAutoAdvance()
+                }
             }
         }
         typingRunnable = task
         handler.post(task)
+    }
+
+    private fun scheduleDialogueAutoAdvance() {
+        autoAdvanceRunnable?.let { handler.removeCallbacks(it) }
+        val task = Runnable {
+            autoAdvanceRunnable = null
+            if (dialogueQueue.isNotEmpty() && !isTyping) {
+                dialogueIndex++
+                showCurrentDialogue()
+            }
+        }
+        autoAdvanceRunnable = task
+        handler.postDelayed(task, 3000L)
     }
 
     private fun advanceDialogue() {
@@ -376,7 +396,10 @@ class OverlayService : Service() {
             dialogue?.text = formatCharacterText(typingFullText)
             typingPosition = typingFullText.length
             isTyping = false
+            scheduleDialogueAutoAdvance()
         } else {
+            autoAdvanceRunnable?.let { handler.removeCallbacks(it) }
+            autoAdvanceRunnable = null
             dialogueIndex++
             showCurrentDialogue()
         }
@@ -410,6 +433,8 @@ class OverlayService : Service() {
 
     private fun finishDialogueSequence() {
         typingRunnable?.let { handler.removeCallbacks(it) }
+        autoAdvanceRunnable?.let { handler.removeCallbacks(it) }
+        autoAdvanceRunnable = null
         typingRunnable = null
         dialogueQueue = emptyList()
         isTyping = false
