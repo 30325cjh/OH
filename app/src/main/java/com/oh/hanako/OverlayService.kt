@@ -681,9 +681,22 @@ class OverlayService : Service() {
 
     private fun sendMessage() {
         hidePanelKeyboard()
-        val text = input?.text?.toString()?.trim().orEmpty()
-        if (text.isEmpty()) return
-        input?.setText("")
+        val edit = input ?: return
+        val text = edit.text?.toString()?.trim().orEmpty()
+        val prefs = getSharedPreferences("hanako_state", Context.MODE_PRIVATE)
+        if (text.isEmpty()) {
+            // 빈 전송 버튼은 직전 입력을 입력창에 복원한다. 다시 눌러 재전송할 수 있다.
+            val previousInput = prefs.getString("last_submitted_input", "").orEmpty()
+            if (previousInput.isNotBlank()) {
+                edit.setText(previousInput)
+                edit.setSelection(edit.text?.length ?: 0)
+                edit.requestFocus()
+            }
+            return
+        }
+        // API 오류나 일시적인 출력 실패가 있어도 직전 입력을 잃지 않도록 먼저 저장한다.
+        prefs.edit().putString("last_submitted_input", text).apply()
+        edit.setText("")
         val parsedSegments = parseChatInput(text)
         if (parsedSegments.isEmpty()) return
         val segments = parsedSegments.flatMap { segment ->
