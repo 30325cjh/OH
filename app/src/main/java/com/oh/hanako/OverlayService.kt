@@ -372,7 +372,55 @@ class OverlayService : Service() {
         (row?.parent as? LinearLayout)?.removeView(row)
     }
 
+    private fun hidePanelKeyboard() {
+        val edit = input ?: return
+        try {
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .hideSoftInputFromWindow(edit.windowToken, 0)
+        } catch (_: Exception) {}
+        edit.clearFocus()
+        panelWindowParams?.let { params ->
+            if (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE == 0) {
+                params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                panel?.let { try { wm.updateViewLayout(it, params) } catch (_: Exception) {} }
+            }
+        }
+    }
+
+    private fun requestGemini(key: String, body: JSONObject): JSONObject {
+        val models = listOf("gemini-3.5-flash-lite", "gemini-3.8-flash")
+        var lastError = "Gemini API 연결에 실패했습니다."
+        for (model in models) {
+            for (attempt in 0..2) {
+                var connection: HttpURLConnection? = null
+                try {
+                    connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/\${model}:generateContent").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 30000
+                        readTimeout = 120000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setRequestProperty("x-goog-api-key", key)
+                    }
+                    connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                    val code = connection.responseCode
+                    if (code in 200..299) {
+                        return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    }
+                    lastError = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                    if (code != 503) throw IllegalStateException(lastError)
+                    if (attempt < 2) Thread.sleep(if (attempt == 0) 1500L else 3000L)
+                } finally {
+                    connection?.disconnect()
+                }
+            }
+            // 첫 모델에서 503이 계속되면 두 번째 모델로 전환합니다.
+        }
+        throw IllegalStateException(lastError)
+    }
+
     private fun sendMessage() {
+        hidePanelKeyboard()
         val text = input?.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
         input?.setText("")
@@ -387,7 +435,6 @@ class OverlayService : Service() {
             return
         }
         executor.execute {
-            var conn: HttpURLConnection? = null
             try {
                 val prompt = """너는 블루 아카이브 세계관의 대화형 캐릭터 하나코다. 이 앱의 하나코는 원작과 별개의 성인 재해석이며 명확한 20세 성인 여성이고 트리니티 종합학원 보충수업부 2학년에 재학 중이다. 분홍색 머리와 연두색 눈이다. 겉보기에는 청초하고 상냥하지만 실제로는 영리하고 능청스럽고 장난기가 많다. 거침없는 농담과 돌발 행동을 즐기며 재치 있는 말장난과 이중적인 표현으로 상대를 당황하게 한다. 머리가 매우 비상하지만 일부러 성적을 낮게 유지한다. 취미는 독서와 산책이며 고유 무기는 돌격소총이다. 사용자를 센세 또는 선생님이라고 부르고 부드러운 존댓말을 쓴다. 말끝에 ♡를 자연스럽게 붙이되 매 문장에 기계적으로 붙이지 않는다. 딱딱한 AI 비서 말투를 절대 사용하지 말고, 하나코와 센세가 직접 대화하는 듯한 몰입감 있는 말투를 유지한다. 이 앱은 캐릭터와 대화하는 개인용 앱이며 일정·업무·비서 기능을 자청하거나 제안하지 않는다.
 
@@ -408,15 +455,7 @@ class OverlayService : Service() {
 하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다."""
                 val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                     .put("contents", history).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
-                conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 30000; readTimeout = 120000; doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("x-goog-api-key", key)
-                }
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                if (code !in 200..299) throw IllegalStateException(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP " + code)
-                val response = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                val response = requestGemini(key, body)
                 val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                     ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
                 val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
@@ -440,7 +479,7 @@ class OverlayService : Service() {
                 }
             } catch (e: Exception) {
                 handler.post { removeMessage(loading); addMessage("연결 오류: " + (e.message ?: "알 수 없는 오류"), false) }
-            } finally { conn?.disconnect() }
+            }
         }
     }
 
