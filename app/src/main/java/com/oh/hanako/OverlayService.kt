@@ -74,7 +74,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val mnnStatus = MnnRuntime.check()
+        val mnnStatus = MnnRuntime.check(this)
         android.util.Log.i("HanakoMNN", "Runtime available=" + mnnStatus.available + "; " + mnnStatus.detail)
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val id = "hanako_overlay"
