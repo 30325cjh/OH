@@ -198,8 +198,30 @@ class OverlayService : Service() {
         root.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
-        val edit = EditText(this).apply {
-            hint = "하나코에게 메시지 입력..."; setTextColor(Color.WHITE); setHintTextColor(0xFFB7AAB8.toInt()); textSize = 15f
+        val edit = object : EditText(this) {
+            override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+                if (keyCode == KeyEvent.KEYCODE_ENTER) {
+                    if (event.isShiftPressed) {
+                        val start = selectionStart.coerceAtLeast(0)
+                        val end = selectionEnd.coerceAtLeast(start)
+                        editableText.replace(start, end, "\n")
+                    } else {
+                        sendMessage()
+                    }
+                    return true
+                }
+                return super.onKeyDown(keyCode, event)
+            }
+
+            override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+                if (keyCode == KeyEvent.KEYCODE_ENTER) return true
+                return super.onKeyUp(keyCode, event)
+            }
+        }.apply {
+            hint = "하나코에게 메시지 입력..."
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFFB7AAB8.toInt())
+            textSize = 15f
             setSingleLine(false)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minHeight = dp(48)
@@ -210,16 +232,11 @@ class OverlayService : Service() {
             background = rounded(0xFF302A35.toInt(), 12)
             setPadding(dp(10), dp(7), dp(10), dp(7))
             setOnEditorActionListener { _, actionId, event ->
-                if (actionId == EditorInfo.IME_ACTION_SEND && event?.isShiftPressed != true) {
-                    sendMessage()
-                    true
-                } else false
-            }
-            setOnKeyListener { _, keyCode, event ->
-                if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
-                    if (event.isShiftPressed) {
+                if (actionId == EditorInfo.IME_ACTION_SEND) {
+                    if (event?.isShiftPressed == true) {
                         val start = selectionStart.coerceAtLeast(0)
-                        text?.insert(start, "\n")
+                        val end = selectionEnd.coerceAtLeast(start)
+                        editableText.replace(start, end, "\n")
                     } else {
                         sendMessage()
                     }
