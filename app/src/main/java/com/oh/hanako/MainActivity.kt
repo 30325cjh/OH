@@ -16,6 +16,7 @@ import java.util.Calendar
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var engineStatus: TextView
     private var ageVerifiedThisLaunch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,6 +92,13 @@ class MainActivity : Activity() {
             setPadding(0, 8, 0, 16)
         }
         root.addView(status)
+        engineStatus = TextView(this).apply {
+            text = "음성 엔진: 확인 중..."
+            textSize = 13f
+            setTextColor(0xFF76536A.toInt())
+            setPadding(0, 0, 0, 14)
+        }
+        root.addView(engineStatus)
         root.addView(Button(this).apply {
             text = "화면 위에 표시 권한 허용"
             setOnClickListener {
@@ -116,6 +124,18 @@ class MainActivity : Activity() {
         })
         setContentView(root)
         updateOverlayStatus()
+        updateEngineStatus()
+    }
+
+    private fun updateEngineStatus() {
+        Thread {
+            val result = MnnRuntime.check(applicationContext)
+            runOnUiThread {
+                if (::engineStatus.isInitialized) {
+                    engineStatus.text = "음성 엔진: ${result.detail}"
+                }
+            }
+        }.start()
     }
 
     private fun updateOverlayStatus() {
