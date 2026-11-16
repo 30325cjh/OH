@@ -23,6 +23,6 @@ android {
 }
 
 dependencies {
-    // Alibaba MNN Android runtime (AAR); model inference will be wired in the next stage.
-    implementation 'com.alibaba.android:mnn:0.0.8'
+    // MNN 3.6.1 native runtime + generic Android inference bridge.
+    implementation project(':mnn-sdk')
 }
