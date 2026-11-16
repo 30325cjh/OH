@@ -6,10 +6,12 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -21,6 +23,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -39,26 +42,74 @@ class OverlayService : Service() {
     private var messages: LinearLayout? = null
     private var scroll: ScrollView? = null
     private var input: EditText? = null
+    private var portrait: ImageView? = null
+    private var dialogue: TextView? = null
+    private var bgmPlayer: MediaPlayer? = null
+    private var effectPlayer: MediaPlayer? = null
+    private var voicePlayer: MediaPlayer? = null
     private val history = JSONArray()
     private val pink = 0xFFE86AB2.toInt()
+    private var sequenceToken = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
+
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val id = "hanako_overlay"
         if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(id, "하나코 비서", NotificationManager.IMPORTANCE_LOW))
-            startForeground(18, Notification.Builder(this, id).setSmallIcon(R.drawable.icon).setContentTitle("하나코가 대기 중입니다").setContentText("아이콘을 눌러 하나코를 불러보세요.").build())
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(id, "하나코 비서", NotificationManager.IMPORTANCE_LOW)
+            )
+            startForeground(18, Notification.Builder(this, id).setSmallIcon(R.drawable.icon)
+                .setContentTitle("하나코가 대기 중입니다").setContentText("아이콘을 눌러 하나코를 불러보세요.").build())
         } else {
             @Suppress("DEPRECATION")
-            startForeground(18, Notification.Builder(this).setSmallIcon(R.drawable.icon).setContentTitle("하나코가 대기 중입니다").build())
+            startForeground(18, Notification.Builder(this).setSmallIcon(R.drawable.icon)
+                .setContentTitle("하나코가 대기 중입니다").build())
         }
+        startBgm()
         showBubble()
     }
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun rounded(color: Int, r: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(r).toFloat() }
     private fun overlayType() = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+
+    private fun startBgm() {
+        if (bgmPlayer != null) return
+        bgmPlayer = createAssetPlayer("hanako/sounds/bgm.mp3", true, 0.28f)
+        try { bgmPlayer?.start() } catch (_: Exception) { bgmPlayer?.release(); bgmPlayer = null }
+    }
+
+    private fun createAssetPlayer(path: String, looping: Boolean = false, volume: Float = 1f): MediaPlayer? {
+        return try {
+            val player = MediaPlayer()
+            assets.openFd(path).use { afd ->
+                player.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            }
+            player.isLooping = looping
+            player.setVolume(volume, volume)
+            player.prepare()
+            player
+        } catch (_: Exception) { null }
+    }
+
+    private fun playEffect(file: String) {
+        effectPlayer?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+        effectPlayer = createAssetPlayer("hanako/sounds/$file")
+        try { effectPlayer?.start() } catch (_: Exception) {}
+    }
+
+    private fun playVoice(file: String) {
+        voicePlayer?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+        voicePlayer = createAssetPlayer("hanako/sounds/$file")
+        voicePlayer?.setOnCompletionListener { player ->
+            player.release()
+            if (voicePlayer === player) voicePlayer = null
+        }
+        try { voicePlayer?.start() } catch (_: Exception) {}
+    }
 
     private fun showBubble() {
         if (bubble != null) return
@@ -68,23 +119,55 @@ class OverlayService : Service() {
             elevation = dp(8).toFloat(); setOnClickListener { showPanel() }
         }
         bubble = v
-        wm.addView(v, WindowManager.LayoutParams(dp(64), dp(64), overlayType(), WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply {
-            gravity = Gravity.TOP or Gravity.START; x = dp(14); y = dp(180)
-        })
+        wm.addView(v, WindowManager.LayoutParams(dp(64), dp(64), overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = dp(14); y = dp(180) })
     }
 
     private fun showPanel() {
         if (panel != null) { panel?.visibility = android.view.View.VISIBLE; return }
         bubble?.visibility = android.view.View.GONE
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = rounded(0xFF17131A.toInt(), 20); elevation = dp(14).toFloat() }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = rounded(0xFF17131A.toInt(), 20)
+            elevation = dp(14).toFloat()
+        }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(this).apply { text = "하나코 ♡"; textSize = 21f; typeface = Typeface.DEFAULT_BOLD; setTextColor(0xFFFFC5E8.toInt()) }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        header.addView(TextView(this).apply {
+            text = "하나코 ♡"; textSize = 21f; typeface = Typeface.DEFAULT_BOLD; setTextColor(0xFFFFC5E8.toInt())
+        }, LinearLayout.LayoutParams(0, dp(42), 1f))
         header.addView(Button(this).apply { text = "닫기"; setOnClickListener { closePanel() } })
         root.addView(header)
+
+        val stage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = rounded(0xFF29232D.toInt(), 14)
+            setPadding(dp(8), dp(6), dp(8), dp(8))
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setImageAsset("hanako/images/smile.PNG")
+        }
+        portrait = image
+        stage.addView(image, LinearLayout.LayoutParams(-1, dp(178)))
+        val line = TextView(this).apply {
+            text = "반가워요, 센세"
+            textSize = 17f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(6), dp(7), dp(6), dp(8))
+        }
+        dialogue = line
+        stage.addView(line, LinearLayout.LayoutParams(-1, -2))
+        root.addView(stage, LinearLayout.LayoutParams(-1, -2))
+
         val historyScroll = ScrollView(this).apply { isFillViewport = true; background = rounded(0xFF29232D.toInt(), 12) }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8)) }
         historyScroll.addView(list); messages = list; scroll = historyScroll
         root.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
         val edit = EditText(this).apply {
             hint = "하나코에게 메시지 입력..."; setTextColor(Color.WHITE); setHintTextColor(0xFFB7AAB8.toInt()); textSize = 15f
@@ -96,37 +179,94 @@ class OverlayService : Service() {
         input = edit
         row.addView(edit, LinearLayout.LayoutParams(0, dp(48), 1f))
         row.addView(Button(this).apply { text = "전송"; setOnClickListener { sendMessage() } }, LinearLayout.LayoutParams(dp(68), dp(48)))
-        root.addView(row); panel = root
+        root.addView(row)
+        panel = root
         val w = minOf(dp(620), resources.displayMetrics.widthPixels - dp(24))
-        wm.addView(root, WindowManager.LayoutParams(w, dp(390), overlayType(), WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = dp(16)
-        })
+        wm.addView(root, WindowManager.LayoutParams(w, dp(560), overlayType(),
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = dp(16) })
+
+        runLoginSequence()
         edit.requestFocus()
-        handler.postDelayed({ try { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT) } catch (_: Exception) {} }, 250)
+        handler.postDelayed({
+            try { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT) }
+            catch (_: Exception) {}
+        }, 250)
+    }
+
+    private fun ImageView.setImageAsset(path: String) {
+        try { assets.open(path).use { setImageBitmap(BitmapFactory.decodeStream(it)) } } catch (_: Exception) {}
+    }
+
+    private fun runLoginSequence() {
+        val token = ++sequenceToken
+        dialogue?.text = "반가워요, 센세"
+        portrait?.setImageAsset("hanako/images/smile.PNG")
+        portrait?.animate()?.cancel()
+        portrait?.scaleX = 1f
+        portrait?.scaleY = 1f
+        portrait?.animate()?.scaleX(1.045f)?.scaleY(1.045f)?.setDuration(180)?.withEndAction {
+            portrait?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(180)?.start()
+        }?.start()
+        playEffect("tell.mp3")
+        playVoice("greeting.mp3")
+
+        handler.postDelayed({
+            if (token != sequenceToken || panel == null) return@postDelayed
+            dialogue?.text = "今日は何をするんですか、センセイ？♡"
+            portrait?.setImageAsset("hanako/images/play_dump.PNG")
+            portrait?.animate()?.cancel()
+            portrait?.scaleX = 1f
+            portrait?.scaleY = 1f
+            playEffect("why.mp3")
+            playVoice("asked.mp3")
+        }, 2600)
     }
 
     private fun closePanel() {
+        sequenceToken++
+        voicePlayer?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+        voicePlayer = null
         panel?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        panel = null; messages = null; scroll = null; input = null
+        panel = null; messages = null; scroll = null; input = null; portrait = null; dialogue = null
         bubble?.visibility = android.view.View.VISIBLE
     }
+
     private fun addMessage(text: String, fromUser: Boolean): TextView {
-        val view = TextView(this).apply { this.text = text; textSize = 15f; setTextColor(Color.WHITE); setTextIsSelectable(true); setPadding(dp(12), dp(9), dp(12), dp(9)); background = rounded(if (fromUser) 0xFF9B4C7D.toInt() else 0xFF3B3340.toInt(), 14) }
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = if (fromUser) Gravity.END else Gravity.START; setPadding(dp(3), dp(4), dp(3), dp(4)); addView(view, LinearLayout.LayoutParams(-2, -2)) }
-        messages?.addView(row, LinearLayout.LayoutParams(-1, -2)); scroll?.post { scroll?.fullScroll(android.view.View.FOCUS_DOWN) }; view.tag = row
+        val view = TextView(this).apply {
+            this.text = text; textSize = 15f; setTextColor(Color.WHITE); setTextIsSelectable(true)
+            setPadding(dp(12), dp(9), dp(12), dp(9))
+            background = rounded(if (fromUser) 0xFF9B4C7D.toInt() else 0xFF3B3340.toInt(), 14)
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = if (fromUser) Gravity.END else Gravity.START
+            setPadding(dp(3), dp(4), dp(3), dp(4)); addView(view, LinearLayout.LayoutParams(-2, -2))
+        }
+        messages?.addView(row, LinearLayout.LayoutParams(-1, -2))
+        scroll?.post { scroll?.fullScroll(android.view.View.FOCUS_DOWN) }
+        view.tag = row
         return view
     }
-    private fun removeMessage(view: TextView) { val row = view.tag as? android.view.View; (row?.parent as? LinearLayout)?.removeView(row) }
+
+    private fun removeMessage(view: TextView) {
+        val row = view.tag as? android.view.View
+        (row?.parent as? LinearLayout)?.removeView(row)
+    }
 
     private fun sendMessage() {
         val text = input?.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
-        input?.setText(""); addMessage(text, true)
+        input?.setText("")
+        addMessage(text, true)
         history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
         while (history.length() > 20) history.remove(0)
         val loading = addMessage("하나코가 생각 중이에요♡", false)
         val key = BuildConfig.GEMINI_API_KEY.trim()
-        if (key.isEmpty()) { removeMessage(loading); addMessage("Gemini API 키가 설정되지 않았어요. GitHub Secrets의 GEMINI_API_KEY를 확인해 주세요.", false); return }
+        if (key.isEmpty()) {
+            removeMessage(loading)
+            addMessage("Gemini API 키가 설정되지 않았어요. GitHub Secrets의 GEMINI_API_KEY를 확인해 주세요.", false)
+            return
+        }
         executor.execute {
             var conn: HttpURLConnection? = null
             try {
@@ -135,13 +275,15 @@ class OverlayService : Service() {
                     .put("contents", history).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 1800))
                 conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"; connectTimeout = 30000; readTimeout = 120000; doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8"); setRequestProperty("x-goog-api-key", key)
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("x-goog-api-key", key)
                 }
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = conn.responseCode
                 if (code !in 200..299) throw IllegalStateException(conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP " + code)
                 val response = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
+                val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                    ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
                 val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
                 if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
                 history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
@@ -152,9 +294,16 @@ class OverlayService : Service() {
             } finally { conn?.disconnect() }
         }
     }
+
     override fun onDestroy() {
+        sequenceToken++
         bubble?.let { try { wm.removeView(it) } catch (_: Exception) {} }
         panel?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        executor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy()
+        voicePlayer?.release(); voicePlayer = null
+        effectPlayer?.release(); effectPlayer = null
+        bgmPlayer?.release(); bgmPlayer = null
+        executor.shutdownNow()
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 }
