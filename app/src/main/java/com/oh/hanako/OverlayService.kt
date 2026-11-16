@@ -512,12 +512,12 @@ class OverlayService : Service() {
     }
 
     private fun removeSoundMarkers(text: String): String {
-        return Regex("\\\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\\\.mp3\\\\]", RegexOption.IGNORE_CASE)
+        return Regex("\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\.mp3\\]", RegexOption.IGNORE_CASE)
             .replace(text, "")
     }
 
     private fun makeDialogueLinesWithSounds(raw: String): List<DialogueLine> {
-        val marker = Regex("\\\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\\\.mp3\\\\]", RegexOption.IGNORE_CASE)
+        val marker = Regex("\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\.mp3\\]", RegexOption.IGNORE_CASE)
         val result = mutableListOf<DialogueLine>()
         var cursor = 0
         for (match in marker.findAll(raw)) {
