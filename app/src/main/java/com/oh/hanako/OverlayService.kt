@@ -200,9 +200,31 @@ class OverlayService : Service() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
         val edit = EditText(this).apply {
             hint = "하나코에게 메시지 입력..."; setTextColor(Color.WHITE); setHintTextColor(0xFFB7AAB8.toInt()); textSize = 15f
-            setSingleLine(true); imeOptions = EditorInfo.IME_ACTION_SEND; background = rounded(0xFF302A35.toInt(), 12); setPadding(dp(10), 0, dp(10), 0)
+            setSingleLine(false)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minHeight = dp(48)
+            maxHeight = dp(104)
+            maxLines = 4
+            gravity = Gravity.CENTER_VERTICAL
+            imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            background = rounded(0xFF302A35.toInt(), 12)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
             setOnEditorActionListener { _, actionId, event ->
-                if (actionId == EditorInfo.IME_ACTION_SEND || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_UP)) { sendMessage(); true } else false
+                if (actionId == EditorInfo.IME_ACTION_SEND && event?.isShiftPressed != true) {
+                    sendMessage()
+                    true
+                } else false
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
+                    if (event.isShiftPressed) {
+                        val start = selectionStart.coerceAtLeast(0)
+                        text?.insert(start, "\\n")
+                    } else {
+                        sendMessage()
+                    }
+                    true
+                } else false
             }
         }
         input = edit
@@ -215,7 +237,7 @@ class OverlayService : Service() {
             textSize = 18f
             setOnClickListener { replayConversation() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        row.addView(edit, LinearLayout.LayoutParams(0, dp(48), 1f))
+        row.addView(edit, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(Button(this).apply { text = "전송"; setOnClickListener { sendMessage() } }, LinearLayout.LayoutParams(dp(68), dp(48)))
         root.addView(row)
         inputRow = row
@@ -535,10 +557,40 @@ class OverlayService : Service() {
     }
 
 
-    private fun extractDirectHanakoText(inputText: String): String? {
-        val prefix = "@하나코:"
-        if (!inputText.startsWith(prefix)) return null
-        return inputText.substring(prefix.length).trim()
+    private data class ChatInputSegment(val role: String, val text: String)
+
+    private fun parseChatInput(inputText: String): List<ChatInputSegment> {
+        val result = mutableListOf<ChatInputSegment>()
+        var currentRole: String? = null
+        val currentText = StringBuilder()
+
+        fun flush() {
+            val value = currentText.toString().trim()
+            if (!currentRole.isNullOrBlank() && value.isNotBlank()) {
+                result.add(ChatInputSegment(currentRole!!, value))
+            }
+            currentText.setLength(0)
+        }
+
+        inputText.replace("\\r", "").split("\\n").forEach { rawLine ->
+            val line = when {
+                rawLine.startsWith("@하나코:") -> "draft" to rawLine.removePrefix("@하나코:").trim()
+                rawLine.startsWith("@:") -> "user" to rawLine.removePrefix("@:").trim()
+                else -> "user" to rawLine.trim()
+            }
+            if (line.second.isBlank()) {
+                if (currentText.isNotEmpty()) currentText.append("\\n")
+                return@forEach
+            }
+            if (currentRole != line.first) {
+                flush()
+                currentRole = line.first
+            }
+            if (currentText.isNotEmpty()) currentText.append("\\n")
+            currentText.append(line.second)
+        }
+        flush()
+        return result
     }
 
     private fun removeSoundMarkers(text: String): String {
@@ -575,19 +627,21 @@ class OverlayService : Service() {
         if (text.isEmpty()) return
         input?.setText("")
 
-        val directText = extractDirectHanakoText(text)
-        if (!directText.isNullOrBlank()) {
-            val directAnswer = "하나코: " + directText
-            history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", directAnswer))))
-            while (history.length() > 20) history.remove(0)
-            addMessage(directText, false)
-            showDialogueSequence(listOf(DialogueLine(directText, "hanako/images/play_dump.PNG")))
-            return
-        }
+        val segments = parseChatInput(text)
+        if (segments.isEmpty()) return
 
-        addMessage(text, true)
-        history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
-        while (history.length() > 20) history.remove(0)
+        var hasHanakoDraft = false
+        for (segment in segments) {
+            if (segment.role == "user") {
+                addMessage(segment.text, true)
+                history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
+            } else {
+                hasHanakoDraft = true
+                // 앱의 대화 기록에서는 초안을 하나코 쪽 항목으로 보관한다.
+                history.put(JSONObject().put("role", "draft").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
+            }
+        }
+        while (history.length() > 30) history.remove(0)
 
         val loading = addMessage("하나코가 생각 중이에요♡", false)
         val key = BuildConfig.GEMINI_API_KEY.trim()
@@ -598,7 +652,7 @@ class OverlayService : Service() {
         }
         executor.execute {
             try {
-                val prompt = """너는 블루 아카이브 세계관의 대화형 캐릭터 하나코다. 이 앱의 하나코는 원작과 별개의 성인 재해석이며 명확한 20세 성인 여성이고 트리니티 종합학원 보충수업부 2학년에 재학 중이다. 분홍색 머리와 연두색 눈이다. 겉보기에는 청초하고 상냥하지만 실제로는 영리하고 능청스럽고 장난기가 많다. 거침없는 농담과 돌발 행동을 즐기며 재치 있는 말장난과 이중적인 표현으로 상대를 당황하게 한다. 머리가 매우 비상하지만 일부러 성적을 낮게 유지한다. 취미는 독서와 산책이며 고유 무기는 돌격소총이다. 사용자를 센세 또는 선생님이라고 부르고 부드러운 존댓말을 쓴다. 말끝에 ♡를 자연스럽게 붙이되 매 문장에 기계적으로 붙이지 않는다. 딱딱한 AI 비서 말투를 절대 사용하지 말고, 하나코와 센세가 직접 대화하는 듯한 몰입감 있는 말투를 유지한다. 이 앱은 캐릭터와 대화하는 개인용 앱이며 일정·업무·비서 기능을 자청하거나 제안하지 않는다.
+                var prompt = """너는 블루 아카이브 세계관의 대화형 캐릭터 하나코다. 이 앱의 하나코는 원작과 별개의 성인 재해석이며 명확한 20세 성인 여성이고 트리니티 종합학원 보충수업부 2학년에 재학 중이다. 분홍색 머리와 연두색 눈이다. 겉보기에는 청초하고 상냥하지만 실제로는 영리하고 능청스럽고 장난기가 많다. 거침없는 농담과 돌발 행동을 즐기며 재치 있는 말장난과 이중적인 표현으로 상대를 당황하게 한다. 머리가 매우 비상하지만 일부러 성적을 낮게 유지한다. 취미는 독서와 산책이며 고유 무기는 돌격소총이다. 사용자를 센세 또는 선생님이라고 부르고 부드러운 존댓말을 쓴다. 말끝에 ♡를 자연스럽게 붙이되 매 문장에 기계적으로 붙이지 않는다. 딱딱한 AI 비서 말투를 절대 사용하지 말고, 하나코와 센세가 직접 대화하는 듯한 몰입감 있는 말투를 유지한다. 이 앱은 캐릭터와 대화하는 개인용 앱이며 일정·업무·비서 기능을 자청하거나 제안하지 않는다.
 
 응답은 반드시 아래 두 부분을 모두, 이 순서대로 출력한다.
 나레이션: [장면의 주변 상황, 분위기, 표정과 동작의 흐름을 자연스럽게 서술]
@@ -616,9 +670,23 @@ class OverlayService : Service() {
 - 앱에 하나코의 짧은 숨소리·신음 효과음 파일이 있다. 장면상 실제로 어울릴 때만 하나코 대사 중 해당 반응이 나오는 문장 바로 뒤에 다음 표식 중 하나를 붙인다: [SOUND:moan,a-ang.mp3], [SOUND:moan,ha-ang.mp3], [SOUND:long_moan,ha-a-ang.mp3].
 - 이 표식은 화면에 표시되지 않고 효과음 재생에만 사용된다. 일반적인 대화, 인사, 웃음, 놀람, 슬픔, 전투 상황에는 절대 사용하지 않는다. 성인 캐릭터 간 합의된 친밀한 장면에서 실제로 어울리는 짧은 반응에만 드물게 사용하고, 한 장면에서 남발하지 않는다. 짧은 반응에는 짧은 파일, 길게 이어지는 반응에만 long_moan 파일을 선택한다.
 
-하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다."""
+하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다.\n\n하나코 초안 처리 규칙:\n- 대화 기록에 'draft'로 전달된 내용은 센세가 하나코가 말할 내용의 초안으로 지정한 것이다. 센세가 직접 말한 내용으로 취급하지 않는다.\n- 초안의 핵심 의미와 의도는 유지하되, 기존 대화 맥락에 맞춰 하나코 특유의 말투, 행동 묘사, 표정, 나레이션을 더해 자연스럽고 풍부한 완성 대사로 확장한다. 초안을 그대로 복사해 끝내지 않는다.\n- 입력에 일반 센세 메시지와 하나코 초안이 함께 있으면 입력된 순서와 맥락을 존중한다.\n- 초안이 없으면 평소처럼 직전 센세 메시지에 답한다."""
+                val apiContents = JSONArray()
+                for (i in 0 until history.length()) {
+                    val item = history.optJSONObject(i) ?: continue
+                    val role = item.optString("role")
+                    val parts = item.optJSONArray("parts") ?: continue
+                    if (role == "draft") {
+                        val draftText = parts.optJSONObject(0)?.optString("text").orEmpty()
+                        apiContents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put(
+                            "text", "하나코가 말할 초안(센세의 발언이 아니라 하나코의 대사 초안): $draftText"
+                        ))))
+                    } else {
+                        apiContents.put(item)
+                    }
+                }
                 val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
-                    .put("contents", history).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
+                    .put("contents", apiContents).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
                 val response = requestGemini(key, body) { status ->
                     handler.post { loading.text = status }
                 }
