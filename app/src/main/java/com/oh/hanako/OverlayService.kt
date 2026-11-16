@@ -583,36 +583,37 @@ class OverlayService : Service() {
     }
 
 
-    private data class ChatInputSegment(val role: String, val text: String)
+    private data class ChatInputSegment(val role: String, val text: String, val repeatCount: Int = 1)
 
     private fun parseChatInput(inputText: String): List<ChatInputSegment> {
         val result = mutableListOf<ChatInputSegment>()
         var currentRole: String? = null
         val currentText = StringBuilder()
-
         fun flush() {
             val value = currentText.toString().trim()
             if (!currentRole.isNullOrBlank() && value.isNotBlank()) {
-                result.add(ChatInputSegment(currentRole!!, value))
+                val repeatMatch = Regex("(?s)^(.*?)(?:\\s*[×xX]\\s*(\\d+))\\s*$").matchEntire(value)
+                val message = repeatMatch?.groupValues?.get(1)?.trim().orEmpty().ifBlank { value }
+                val count = repeatMatch?.groupValues?.get(2)?.toIntOrNull()?.coerceIn(1, 10) ?: 1
+                result.add(ChatInputSegment(currentRole!!, message, count))
             }
             currentText.setLength(0)
         }
-
-        inputText.replace("\r", "").split("\n").forEach { rawLine ->
+        inputText.replace("\\r", "").split("\\n").forEach { rawLine ->
             val line = when {
                 rawLine.startsWith("@하나코:") -> "draft" to rawLine.removePrefix("@하나코:").trim()
                 rawLine.startsWith("@:") -> "user" to rawLine.removePrefix("@:").trim()
                 else -> "user" to rawLine.trim()
             }
             if (line.second.isBlank()) {
-                if (currentText.isNotEmpty()) currentText.append("\n")
+                if (currentText.isNotEmpty()) currentText.append("\\n")
                 return@forEach
             }
             if (currentRole != line.first) {
                 flush()
                 currentRole = line.first
             }
-            if (currentText.isNotEmpty()) currentText.append("\n")
+            if (currentText.isNotEmpty()) currentText.append("\\n")
             currentText.append(line.second)
         }
         flush()
@@ -681,21 +682,11 @@ class OverlayService : Service() {
         val text = input?.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
         input?.setText("")
-
-        val segments = parseChatInput(text)
-        if (segments.isEmpty()) return
-
-        for (segment in segments) {
-            if (segment.role == "user") {
-                addMessage(segment.text, true)
-                history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
-            } else {
-                // 앱의 대화 기록에서는 초안을 하나코 쪽 항목으로 보관한다.
-                history.put(JSONObject().put("role", "draft").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
-            }
+        val parsedSegments = parseChatInput(text)
+        if (parsedSegments.isEmpty()) return
+        val segments = parsedSegments.flatMap { segment ->
+            List(segment.repeatCount) { ChatInputSegment(segment.role, segment.text) }
         }
-        while (history.length() > 30) history.remove(0)
-
         val loading = addMessage("하나코가 생각 중이에요♡", false)
         val key = BuildConfig.GEMINI_API_KEY.trim()
         if (key.isEmpty()) {
@@ -705,7 +696,7 @@ class OverlayService : Service() {
         }
         executor.execute {
             try {
-                var prompt = """너는 블루 아카이브 세계관의 대화형 캐릭터 하나코다. 이 앱의 하나코는 원작과 별개의 성인 재해석이며 명확한 20세 성인 여성이고 트리니티 종합학원 보충수업부 2학년에 재학 중이다. 분홍색 머리와 연두색 눈이다. 겉보기에는 청초하고 상냥하지만 실제로는 영리하고 능청스럽고 장난기가 많다. 거침없는 농담과 돌발 행동을 즐기며 재치 있는 말장난과 이중적인 표현으로 상대를 당황하게 한다. 머리가 매우 비상하지만 일부러 성적을 낮게 유지한다. 취미는 독서와 산책이며 고유 무기는 돌격소총이다. 사용자를 센세 또는 선생님이라고 부르고 부드러운 존댓말을 쓴다. 말끝에 ♡를 자연스럽게 붙이되 매 문장에 기계적으로 붙이지 않는다. 딱딱한 AI 비서 말투를 절대 사용하지 말고, 하나코와 센세가 직접 대화하는 듯한 몰입감 있는 말투를 유지한다. 이 앱은 캐릭터와 대화하는 개인용 앱이며 일정·업무·비서 기능을 자청하거나 제안하지 않는다.
+                val prompt = """너는 블루 아카이브 세계관의 대화형 캐릭터 하나코다. 이 앱의 하나코는 원작과 별개의 성인 재해석이며 명확한 20세 성인 여성이고 트리니티 종합학원 보충수업부 2학년에 재학 중이다. 분홍색 머리와 연두색 눈이다. 겉보기에는 청초하고 상냥하지만 실제로는 영리하고 능청스럽고 장난기가 많다. 거침없는 농담과 돌발 행동을 즐기며 재치 있는 말장난과 이중적인 표현으로 상대를 당황하게 한다. 머리가 매우 비상하지만 일부러 성적을 낮게 유지한다. 취미는 독서와 산책이며 고유 무기는 돌격소총이다. 사용자를 센세 또는 선생님이라고 부르고 부드러운 존댓말을 쓴다. 말끝에 ♡를 자연스럽게 붙이되 매 문장에 기계적으로 붙이지 않는다. 딱딱한 AI 비서 말투를 절대 사용하지 말고, 하나코와 센세가 직접 대화하는 듯한 몰입감 있는 말투를 유지한다. 이 앱은 캐릭터와 대화하는 개인용 앱이며 일정·업무·비서 기능을 자청하거나 제안하지 않는다.
 
 응답은 반드시 아래 두 부분을 모두, 이 순서대로 출력한다.
 나레이션: [장면의 주변 상황, 분위기, 표정과 동작의 흐름을 자연스럽게 서술]
@@ -730,60 +721,72 @@ class OverlayService : Service() {
 - 초안의 핵심 의미와 의도는 유지하되, 기존 대화 맥락에 맞춰 하나코 특유의 말투, 행동 묘사, 표정, 나레이션을 더해 자연스럽고 풍부한 완성 대사로 확장한다. 초안을 그대로 복사해 끝내지 않는다.
 - 입력에 일반 센세 메시지와 하나코 초안이 함께 있으면 입력된 순서와 맥락을 존중한다.
 - 초안이 없으면 평소처럼 직전 센세 메시지에 답한다."""
-                val apiContents = JSONArray()
-                for (i in 0 until history.length()) {
-                    val item = history.optJSONObject(i) ?: continue
-                    val role = item.optString("role")
-                    val parts = item.optJSONArray("parts") ?: continue
-                    if (role == "draft") {
-                        val draftText = parts.optJSONObject(0)?.optString("text").orEmpty()
-                        apiContents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put(
-                            "text", "하나코가 말할 초안(센세의 발언이 아니라 하나코의 대사 초안): $draftText"
-                        ))))
-                    } else if (role == "model") {
-                        // 효과음 마커는 앱 내부 재생용이므로 Gemini 대화 문맥에는 전달하지 않는다.
-                        val modelText = parts.optJSONObject(0)?.optString("text").orEmpty()
-                        val cleanItem = JSONObject(item.toString())
-                        cleanItem.put("parts", JSONArray().put(JSONObject().put("text", removeSoundMarkers(modelText))))
-                        apiContents.put(cleanItem)
+                val completedTurns = mutableListOf<Pair<ChatInputSegment, String>>()
+                for ((turnIndex, segment) in segments.withIndex()) {
+                    if (segment.role == "user") {
+                        history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
                     } else {
-                        apiContents.put(item)
+                        history.put(JSONObject().put("role", "draft").put("parts", JSONArray().put(JSONObject().put("text", segment.text))))
                     }
+                    val apiContents = JSONArray()
+                    for (i in 0 until history.length()) {
+                        val item = history.optJSONObject(i) ?: continue
+                        val role = item.optString("role")
+                        val parts = item.optJSONArray("parts") ?: continue
+                        if (role == "draft") {
+                            val draftText = parts.optJSONObject(0)?.optString("text").orEmpty()
+                            apiContents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put(
+                                "text", "하나코가 말할 초안(센세의 발언이 아니라 하나코의 대사 초안): $draftText"
+                            ))))
+                        } else if (role == "model") {
+                            val modelText = parts.optJSONObject(0)?.optString("text").orEmpty()
+                            val cleanItem = JSONObject(item.toString())
+                            cleanItem.put("parts", JSONArray().put(JSONObject().put("text", removeSoundMarkers(modelText))))
+                            apiContents.put(cleanItem)
+                        } else {
+                            apiContents.put(item)
+                        }
+                    }
+                    val body = JSONObject()
+                        .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
+                        .put("contents", apiContents)
+                        .put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
+                    val response = requestGemini(key, body) { status ->
+                        handler.post { loading.text = "$status · \${turnIndex + 1}/\${segments.size}" }
+                    }
+                    val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                        ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
+                    val answer = (0 until parts.length()).joinToString("") {
+                        parts.optJSONObject(it)?.optString("text").orEmpty()
+                    }.trim()
+                    if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
+                    history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
+                    while (history.length() > 30) history.remove(0)
+                    completedTurns.add(segment to answer)
                 }
-                val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
-                    .put("contents", apiContents).put("generationConfig", JSONObject().put("temperature", 0.95).put("maxOutputTokens", 3600))
-                val response = requestGemini(key, body) { status ->
-                    handler.post { loading.text = status }
-                }
-                val parts = response.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
-                    ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
-                val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
-                if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
-                // 리플레이에서 효과음을 복원할 수 있도록 원본 마커를 대화 기록에 보존한다.
-                history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
-                val cleanedAnswer = removeSoundMarkers(answer)
-                while (history.length() > 20) history.remove(0)
-                val characterMarkerForBubble = "하나코:"
-                val characterStartForBubble = cleanedAnswer.indexOf(characterMarkerForBubble)
-                val characterTextForBubble = if (characterStartForBubble >= 0)
-                    cleanedAnswer.substring(characterStartForBubble + characterMarkerForBubble.length).trim() else cleanedAnswer
                 handler.post {
                     removeMessage(loading)
-                    if (characterTextForBubble.isNotBlank()) addMessage(characterTextForBubble, false)
-                    val narrationMarker = "나레이션:"
-                    val characterMarker = "하나코:"
-                    val nStart = cleanedAnswer.indexOf(narrationMarker)
-                    val cStart = answer.indexOf(characterMarker)
-                    val narrationText = if (nStart >= 0 && cStart > nStart)
-                        cleanedAnswer.substring(nStart + narrationMarker.length, cleanedAnswer.indexOf(characterMarker, nStart)).trim() else ""
-                    val originalCharacterStart = answer.indexOf(characterMarker)
-                    val characterText = if (originalCharacterStart >= 0)
-                        answer.substring(originalCharacterStart + characterMarker.length).trim() else answer
-                    val scenes = makeDialogueLinesWithSounds(characterText)
-                    showDialogueSequence(scenes)
+                    val allDialogueLines = mutableListOf<DialogueLine>()
+                    for ((segment, answer) in completedTurns) {
+                        if (segment.role == "user") addMessage(segment.text, true)
+                        val cleanAnswer = removeSoundMarkers(answer)
+                        val characterMarker = "하나코:"
+                        val characterStart = cleanAnswer.indexOf(characterMarker)
+                        val characterText = if (characterStart >= 0)
+                            cleanAnswer.substring(characterStart + characterMarker.length).trim() else cleanAnswer
+                        if (characterText.isNotBlank()) addMessage(characterText, false)
+                        val originalCharacterStart = answer.indexOf(characterMarker)
+                        val originalCharacterText = if (originalCharacterStart >= 0)
+                            answer.substring(originalCharacterStart + characterMarker.length).trim() else answer
+                        allDialogueLines.addAll(makeDialogueLinesWithSounds(originalCharacterText))
+                    }
+                    if (allDialogueLines.isNotEmpty()) showDialogueSequence(allDialogueLines)
                 }
             } catch (_: Exception) {
-                handler.post { removeMessage(loading) }
+                handler.post {
+                    removeMessage(loading)
+                    addMessage("응답을 가져오지 못했어요. 잠시 후 다시 말해 주세요, 센세.", false)
+                }
             }
         }
     }
