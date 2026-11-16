@@ -223,7 +223,16 @@ class OverlayService : Service() {
         }
         panelWindowParams = params
         wm.addView(root, params)
-        runLoginSequence()
+        restoreChatHistory()
+        val prefs = getSharedPreferences("hanako_state", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("opening_sequence_shown", false)) {
+            prefs.edit().putBoolean("opening_sequence_shown", true).apply()
+            runLoginSequence()
+        } else {
+            portrait?.setImageAsset("hanako/images/play_dump.PNG")
+            portrait?.layoutParams = portrait?.layoutParams?.apply { height = dp(178) }
+            dialogue?.text = "다시 와주셨네요, 센세. ♡"
+        }
     }
 
     private fun enablePanelInput(edit: EditText) {
@@ -336,6 +345,24 @@ class OverlayService : Service() {
             .filter { it.isNotEmpty() }
     }
 
+    private fun restoreChatHistory() {
+        messages?.removeAllViews()
+        for (i in 0 until history.length()) {
+            val item = history.optJSONObject(i) ?: continue
+            val role = item.optString("role")
+            val text = item.optJSONArray("parts")?.optJSONObject(0)?.optString("text").orEmpty()
+            if (text.isBlank()) continue
+            if (role == "user") {
+                addMessage(text, true)
+            } else if (role == "model") {
+                val marker = "하나코:"
+                val start = text.indexOf(marker)
+                val characterText = if (start >= 0) text.substring(start + marker.length).trim() else text
+                if (characterText.isNotBlank()) addMessage(characterText, false)
+            }
+        }
+    }
+
     private fun closePanel() {
         sequenceToken++
         stopBgm()
@@ -394,42 +421,39 @@ class OverlayService : Service() {
     ): JSONObject {
         val models = listOf("gemini-3.5-flash-lite", "gemini-3.8-flash")
         var lastError: Exception = IllegalStateException("Gemini API 연결에 실패했습니다.")
-        var attemptNumber = 0
-        for (model in models) {
-            for (attempt in 0..2) {
-                attemptNumber++
-                var connection: HttpURLConnection? = null
-                try {
-                    connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        connectTimeout = 10000
-                        readTimeout = 10000
-                        doOutput = true
-                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("x-goog-api-key", key)
-                    }
-                    connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                    val code = connection.responseCode
-                    if (code in 200..299) {
-                        return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                    }
-                    val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
-                    lastError = IllegalStateException(errorText)
-                    if (code !in listOf(408, 429, 500, 502, 503, 504)) throw lastError
-                } catch (e: java.net.SocketTimeoutException) {
-                    lastError = e
-                } catch (e: java.io.IOException) {
-                    lastError = e
-                } finally {
-                    connection?.disconnect()
+        for (attempt in 1..3) {
+            val model = models[(attempt - 1) % models.size]
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("x-goog-api-key", key)
                 }
-                if (attempt < 2 || model != models.last()) {
-                    onRetry("응답이 늦어 다시 요청하고 있어요♡ (${attemptNumber}회차)")
-                    Thread.sleep(1000L)
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val code = connection.responseCode
+                if (code in 200..299) {
+                    return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                 }
+                val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $code"
+                lastError = IllegalStateException(errorText)
+                if (code !in listOf(408, 429, 500, 502, 503, 504)) throw lastError
+            } catch (e: java.net.SocketTimeoutException) {
+                lastError = e
+            } catch (e: java.io.IOException) {
+                lastError = e
+            } finally {
+                connection?.disconnect()
+            }
+            if (attempt < 3) {
+                onRetry("응답이 없어 다시 요청하고 있어요♡ (${attempt}/3)")
+                Thread.sleep(1000L)
             }
         }
-        throw IllegalStateException("10초 안에 응답을 받지 못해 재시도했지만 실패했어요. " + (lastError.message ?: lastError.javaClass.simpleName), lastError)
+        throw IllegalStateException("3회 요청했지만 응답을 받지 못했어요.", lastError)
     }
 
     private fun sendMessage() {
@@ -477,8 +501,13 @@ class OverlayService : Service() {
                 if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
                 history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
                 while (history.length() > 20) history.remove(0)
+                val characterMarkerForBubble = "하나코:"
+                val characterStartForBubble = answer.indexOf(characterMarkerForBubble)
+                val characterTextForBubble = if (characterStartForBubble >= 0)
+                    answer.substring(characterStartForBubble + characterMarkerForBubble.length).trim() else answer
                 handler.post {
                     removeMessage(loading)
+                    if (characterTextForBubble.isNotBlank()) addMessage(characterTextForBubble, false)
                     val narrationMarker = "나레이션:"
                     val characterMarker = "하나코:"
                     val nStart = answer.indexOf(narrationMarker)
@@ -492,8 +521,8 @@ class OverlayService : Service() {
                     }
                     showDialogueSequence(scenes)
                 }
-            } catch (e: Exception) {
-                handler.post { removeMessage(loading); addMessage("연결 오류: " + (e.message ?: "알 수 없는 오류"), false) }
+            } catch (_: Exception) {
+                handler.post { removeMessage(loading) }
             }
         }
     }
