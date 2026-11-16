@@ -501,6 +501,44 @@ class OverlayService : Service() {
         throw IllegalStateException("3회 요청했지만 응답을 받지 못했어요.", lastError)
     }
 
+
+    private fun extractDirectHanakoText(inputText: String): String? {
+        val prefix = "[@하나코:"
+        if (!inputText.startsWith(prefix)) return null
+        val closing = inputText.indexOf(']', prefix.length)
+        val inside = if (closing >= 0) inputText.substring(prefix.length, closing) else inputText.substring(prefix.length)
+        val trailing = if (closing >= 0) inputText.substring(closing + 1) else ""
+        return (if (inside.isBlank()) trailing else inside + trailing).trim()
+    }
+
+    private fun removeSoundMarkers(text: String): String {
+        return Regex("\\\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\\\.mp3\\\\]", RegexOption.IGNORE_CASE)
+            .replace(text, "")
+    }
+
+    private fun makeDialogueLinesWithSounds(raw: String): List<DialogueLine> {
+        val marker = Regex("\\\\[SOUND:(long_moan,ha-a-ang|moan,a-ang|moan,ha-ang)\\\\.mp3\\\\]", RegexOption.IGNORE_CASE)
+        val result = mutableListOf<DialogueLine>()
+        var cursor = 0
+        for (match in marker.findAll(raw)) {
+            val segment = raw.substring(cursor, match.range.first)
+            val sentences = splitIntoSentences(segment)
+            val soundFile = match.groupValues[1] + ".mp3"
+            sentences.forEachIndexed { index, sentence ->
+                result.add(DialogueLine(
+                    sentence,
+                    "hanako/images/play_dump.PNG",
+                    effect = if (index == sentences.lastIndex) soundFile else null
+                ))
+            }
+            cursor = match.range.last + 1
+        }
+        splitIntoSentences(raw.substring(cursor)).forEach { sentence ->
+            result.add(DialogueLine(sentence, "hanako/images/play_dump.PNG"))
+        }
+        return result
+    }
+
     private fun sendMessage() {
         hidePanelKeyboard()
         val text = input?.text?.toString()?.trim().orEmpty()
@@ -509,6 +547,17 @@ class OverlayService : Service() {
         addMessage(text, true)
         history.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
         while (history.length() > 20) history.remove(0)
+
+        val directText = extractDirectHanakoText(text)
+        if (!directText.isNullOrBlank()) {
+            val directAnswer = "하나코: " + directText
+            history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", directAnswer))))
+            while (history.length() > 20) history.remove(0)
+            addMessage(directText, false)
+            showDialogueSequence(listOf(DialogueLine(directText, "hanako/images/play_dump.PNG")))
+            return
+        }
+
         val loading = addMessage("하나코가 생각 중이에요♡", false)
         val key = BuildConfig.GEMINI_API_KEY.trim()
         if (key.isEmpty()) {
@@ -533,6 +582,8 @@ class OverlayService : Service() {
 - 하나코의 행동·표정·몸짓·속마음처럼 말로 직접 하는 대사가 아닌 묘사는 반드시 별표로 감싼다. 예: *고개를 살짝 기울이며 미소 짓는다.* 별표 안의 텍스트는 행동이나 묘사로 취급하며 일반 대사와 구분한다. 여러 행동 묘사가 있으면 각각 별표로 감싼다.
 - 별표 밖은 하나코가 직접 말하는 대사로 작성한다.
 - 나레이션은 별표 없이 별도 나레이션 영역에 작성한다.
+- 앱에 하나코의 짧은 숨소리·신음 효과음 파일이 있다. 장면상 실제로 어울릴 때만 하나코 대사 중 해당 반응이 나오는 문장 바로 뒤에 다음 표식 중 하나를 붙인다: [SOUND:moan,a-ang.mp3], [SOUND:moan,ha-ang.mp3], [SOUND:long_moan,ha-a-ang.mp3].
+- 이 표식은 화면에 표시되지 않고 효과음 재생에만 사용된다. 일반적인 대화, 인사, 웃음, 놀람, 슬픔, 전투 상황에는 절대 사용하지 않는다. 성인 캐릭터 간 합의된 친밀한 장면에서 실제로 어울리는 짧은 반응에만 드물게 사용하고, 한 장면에서 남발하지 않는다. 짧은 반응에는 짧은 파일, 길게 이어지는 반응에만 long_moan 파일을 선택한다.
 
 하나코는 성인으로 묘사하며 미성년자로 설정하지 않는다. 성인 등장인물 간의 로맨스와 성인 취향의 유머를 자연스럽게 다룰 수 있다. 게임 세계관의 인물이라는 설정을 유지하되 현실에서 실제로 존재한다고 주장하지 않는다."""
                 val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
@@ -544,26 +595,26 @@ class OverlayService : Service() {
                     ?: throw IllegalStateException("Gemini 응답을 읽을 수 없습니다.")
                 val answer = (0 until parts.length()).joinToString("") { parts.optJSONObject(it)?.optString("text").orEmpty() }.trim()
                 if (answer.isEmpty()) throw IllegalStateException("응답이 비어 있습니다.")
-                history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", answer))))
+                val cleanedAnswer = removeSoundMarkers(answer)
+                history.put(JSONObject().put("role", "model").put("parts", JSONArray().put(JSONObject().put("text", cleanedAnswer))))
                 while (history.length() > 20) history.remove(0)
                 val characterMarkerForBubble = "하나코:"
-                val characterStartForBubble = answer.indexOf(characterMarkerForBubble)
+                val characterStartForBubble = cleanedAnswer.indexOf(characterMarkerForBubble)
                 val characterTextForBubble = if (characterStartForBubble >= 0)
-                    answer.substring(characterStartForBubble + characterMarkerForBubble.length).trim() else answer
+                    cleanedAnswer.substring(characterStartForBubble + characterMarkerForBubble.length).trim() else cleanedAnswer
                 handler.post {
                     removeMessage(loading)
                     if (characterTextForBubble.isNotBlank()) addMessage(characterTextForBubble, false)
                     val narrationMarker = "나레이션:"
                     val characterMarker = "하나코:"
-                    val nStart = answer.indexOf(narrationMarker)
+                    val nStart = cleanedAnswer.indexOf(narrationMarker)
                     val cStart = answer.indexOf(characterMarker)
                     val narrationText = if (nStart >= 0 && cStart > nStart)
-                        answer.substring(nStart + narrationMarker.length, cStart).trim() else ""
-                    val characterText = if (cStart >= 0)
-                        answer.substring(cStart + characterMarker.length).trim() else answer
-                    val scenes = splitIntoSentences(characterText).map { sentence ->
-                        DialogueLine(sentence, "hanako/images/play_dump.PNG")
-                    }
+                        cleanedAnswer.substring(nStart + narrationMarker.length, cleanedAnswer.indexOf(characterMarker, nStart)).trim() else ""
+                    val originalCharacterStart = answer.indexOf(characterMarker)
+                    val characterText = if (originalCharacterStart >= 0)
+                        answer.substring(originalCharacterStart + characterMarker.length).trim() else answer
+                    val scenes = makeDialogueLinesWithSounds(characterText)
                     showDialogueSequence(scenes)
                 }
             } catch (_: Exception) {
