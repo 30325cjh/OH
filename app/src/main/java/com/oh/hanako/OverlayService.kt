@@ -330,7 +330,7 @@ class OverlayService : Service() {
 
     private fun splitIntoSentences(text: String): List<String> {
         return text
-            .replace("\\r", "")
+            .replace("\r", "")
             .split(Regex("(?<=[.!?。！？])\\s+|\\n+"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
