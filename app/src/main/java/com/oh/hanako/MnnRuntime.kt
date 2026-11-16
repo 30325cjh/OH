@@ -1,20 +1,19 @@
 package com.oh.hanako
 
-import com.taobao.android.mnn.MNNNetNative
-
-/** Small health-check boundary for the bundled MNN Android runtime. */
+/**
+ * Loads the MNN core JNI library shipped by the Android AAR.
+ * The MNN Java API is intentionally not referenced here: the published
+ * AAR does not expose the MNNNetNative class used by the previous draft.
+ */
 object MnnRuntime {
     data class Status(val available: Boolean, val detail: String)
 
     fun check(): Status = try {
-        if (MNNNetNative.isRuntimeReady()) {
-            Status(true, "MNN native runtime loaded")
-        } else {
-            val cause = MNNNetNative.getLoadError()
-            Status(false, cause?.let { it.javaClass.simpleName + ": " + it.message }
-                ?: "MNN native runtime did not initialize")
-        }
-    } catch (error: Throwable) {
-        Status(false, error.javaClass.simpleName + ": " + error.message)
+        System.loadLibrary("MNN")
+        Status(true, "MNN native library loaded")
+    } catch (error: UnsatisfiedLinkError) {
+        Status(false, "MNN native library unavailable: ${error.message ?: "unknown linker error"}")
+    } catch (error: SecurityException) {
+        Status(false, "MNN native library blocked: ${error.message ?: "security error"}")
     }
 }
