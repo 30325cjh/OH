@@ -131,6 +131,16 @@ class MainActivity : Activity() {
             }
         })
         root.addView(Button(this).apply {
+            text = "Irodori MNN 모델 로딩 검사"
+            setOnClickListener {
+                status.text = "MNN 모델 파일을 하나씩 검사 중..."
+                Thread {
+                    val result = MnnRuntime.checkModelFiles(this@MainActivity)
+                    runOnUiThread { if (::status.isInitialized) status.text = result }
+                }.start()
+            }
+        })
+        root.addView(Button(this).apply {
             text = "하나코 시작"
             setOnClickListener {
                 if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this@MainActivity)) {
