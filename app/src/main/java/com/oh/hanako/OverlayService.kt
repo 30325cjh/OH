@@ -22,6 +22,9 @@ import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
 import android.widget.Button
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -254,6 +257,47 @@ class OverlayService : Service() {
         try { assets.open(path).use { setImageBitmap(BitmapFactory.decodeStream(it)) } } catch (_: Exception) {}
     }
 
+
+    private fun formatCharacterText(raw: String): CharSequence {
+        val result = SpannableStringBuilder()
+        val actionColor = 0xFFAAAAAA.toInt()
+        val pattern = Regex("\\*([^*]+)\\*")
+        var cursor = 0
+        var hasContent = false
+
+        fun appendParagraphBreak() {
+            while (result.isNotEmpty() && result.last() == ' ') result.delete(result.length - 1, result.length)
+            if (result.isNotEmpty() && result.last() != '\\n') result.append("\\n\\n")
+            while (result.length >= 2 && result.substring(result.length - 2) == "\\n\\n") break
+        }
+
+        for (match in pattern.findAll(raw)) {
+            val before = raw.substring(cursor, match.range.first).trim()
+            if (before.isNotEmpty()) {
+                if (hasContent) appendParagraphBreak()
+                result.append(before)
+                hasContent = true
+            }
+
+            val action = match.groupValues[1].trim()
+            if (action.isNotEmpty()) {
+                if (hasContent) appendParagraphBreak()
+                val start = result.length
+                result.append(action)
+                result.setSpan(ForegroundColorSpan(actionColor), start, result.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                hasContent = true
+            }
+            cursor = match.range.last + 1
+        }
+
+        val after = raw.substring(cursor).trim()
+        if (after.isNotEmpty()) {
+            if (hasContent) appendParagraphBreak()
+            result.append(after)
+        }
+        return result
+    }
+
     private fun showDialogueSequence(items: List<DialogueLine>) {
         if (items.isEmpty()) return
         dialogueQueue = items
@@ -286,7 +330,7 @@ class OverlayService : Service() {
             override fun run() {
                 if (!isTyping || dialogueIndex !in dialogueQueue.indices) return
                 typingPosition = (typingPosition + 1).coerceAtMost(typingFullText.length)
-                dialogue?.text = typingFullText.substring(0, typingPosition)
+                dialogue?.text = formatCharacterText(typingFullText.substring(0, typingPosition))
                 if (typingPosition < typingFullText.length) handler.postDelayed(this, 24)
                 else isTyping = false
             }
@@ -299,7 +343,7 @@ class OverlayService : Service() {
         if (dialogueQueue.isEmpty()) return
         if (isTyping) {
             typingRunnable?.let { handler.removeCallbacks(it) }
-            dialogue?.text = typingFullText
+            dialogue?.text = formatCharacterText(typingFullText)
             typingPosition = typingFullText.length
             isTyping = false
         } else {
@@ -380,7 +424,7 @@ class OverlayService : Service() {
 
     private fun addMessage(text: String, fromUser: Boolean, narration: Boolean = false): TextView {
         val view = TextView(this).apply {
-            this.text = text; textSize = 15f; setTextColor(Color.WHITE); setTextIsSelectable(true)
+            this.text = if (fromUser) text else formatCharacterText(text); textSize = 15f; setTextColor(Color.WHITE); setTextIsSelectable(true)
             setPadding(dp(12), dp(9), dp(12), dp(9))
             background = rounded(if (fromUser) 0xFF9B4C7D.toInt() else if (narration) 0xFF292B38.toInt() else 0xFF3B3340.toInt(), 14)
         }
