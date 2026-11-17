@@ -151,6 +151,16 @@ class MainActivity : Activity() {
             }
         })
         root.addView(Button(this).apply {
+            text = "Irodori ONNX 구조 검사"
+            setOnClickListener {
+                status.text = "ONNX 그래프를 하나씩 여는 중... 잠시 기다려 주세요."
+                Thread {
+                    val result = OnnxModelInspector.inspect(this@MainActivity)
+                    runOnUiThread { if (::status.isInitialized) status.text = result }
+                }.start()
+            }
+        })
+        root.addView(Button(this).apply {
             text = "하나코 시작"
             setOnClickListener {
                 if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this@MainActivity)) {
