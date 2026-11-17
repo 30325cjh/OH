@@ -28,7 +28,7 @@ needle2 = """    private external fun nativeRunWithMetrics(interpreterPtr: Long,
 """
 addition2 = needle2 + """    private external fun nativeDescribeTensors(interpreterPtr: Long, sessionPtr: Long): String
 """
-if "nativeDescribeTensors" not in k:
+if "private external fun nativeDescribeTensors" not in k:
     if needle2 not in k:
         raise SystemExit("MNNInterpreter.kt native declaration point not found")
     k = k.replace(needle2, addition2)
