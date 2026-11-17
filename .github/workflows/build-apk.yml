@@ -21,6 +21,8 @@ jobs:
           git -C /tmp/mnn-sdk fetch --depth 1 origin 5c8f61f47c1afedf86cd1ae79d6df358613c6436
           git -C /tmp/mnn-sdk checkout FETCH_HEAD
           cp -a /tmp/mnn-sdk/mnn-sdk mnn-android-sdk/mnn-sdk
+      - name: Add MNN graph metadata inspection bridge
+        run: python3 tools/patch_mnn_sdk.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
