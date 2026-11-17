@@ -141,6 +141,16 @@ class MainActivity : Activity() {
             }
         })
         root.addView(Button(this).apply {
+            text = "Irodori ONNX 파일 구성 확인"
+            setOnClickListener {
+                status.text = "모델 파일 목록과 크기 확인 중..."
+                Thread {
+                    val result = IrodoriModelInventory.inspect(this@MainActivity)
+                    runOnUiThread { if (::status.isInitialized) status.text = result }
+                }.start()
+            }
+        })
+        root.addView(Button(this).apply {
             text = "하나코 시작"
             setOnClickListener {
                 if (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this@MainActivity)) {
