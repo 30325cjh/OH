@@ -82,7 +82,7 @@ object MnnRuntime {
             try {
                 model = engine.loadModelFromPath(file.absolutePath)
                 interpreter = model.createInterpreter(MNNConfig(numThreads = 1))
-                results.add("$name\n\${interpreter.describeTensors()}")
+                results.add("$name\n${interpreter.describeTensors()}")
             } catch (e: Throwable) {
                 return "$name 구조 검사 실패: " + (e.message ?: e.javaClass.simpleName) +
                     "\n앞서 확인한 결과:\n" + results.joinToString("\n\n")
