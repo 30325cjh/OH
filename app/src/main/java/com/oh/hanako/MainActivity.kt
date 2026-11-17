@@ -95,6 +95,19 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 20)
         })
 
+        root.addView(Button(this).apply {
+            text = "ONNX 검사 결과 복사"
+            setOnClickListener {
+                if (lastOnnxInspection.isBlank()) {
+                    Toast.makeText(this@MainActivity, "먼저 ONNX 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Irodori ONNX 검사 결과", lastOnnxInspection))
+                    Toast.makeText(this@MainActivity, "검사 결과를 복사했어요. 채팅창에 붙여 넣어 주세요.", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+
         status = TextView(this).apply {
             textSize = 14f
             setPadding(0, 8, 0, 16)
@@ -166,18 +179,6 @@ class MainActivity : Activity() {
                         if (::status.isInitialized) status.text = result
                     }
                 }.start()
-            }
-        })
-        root.addView(Button(this).apply {
-            text = "ONNX 검사 결과 복사"
-            setOnClickListener {
-                if (lastOnnxInspection.isBlank()) {
-                    Toast.makeText(this@MainActivity, "먼저 ONNX 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
-                } else {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Irodori ONNX 검사 결과", lastOnnxInspection))
-                    Toast.makeText(this@MainActivity, "검사 결과를 복사했어요. 채팅창에 붙여 넣어 주세요.", Toast.LENGTH_LONG).show()
-                }
             }
         })
         root.addView(Button(this).apply {
