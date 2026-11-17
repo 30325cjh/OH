@@ -99,10 +99,10 @@ class MainActivity : Activity() {
             text = "검사 결과 복사"
             setOnClickListener {
                 if (lastOnnxInspection.isBlank()) {
-                    Toast.makeText(this@MainActivity, "먼저 ONNX 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "먼저 ONNX 또는 MNN 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
                 } else {
                     val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Irodori ONNX 검사 결과", lastOnnxInspection))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Irodori 모델 검사 결과", lastOnnxInspection))
                     Toast.makeText(this@MainActivity, "검사 결과를 복사했어요. 채팅창에 붙여 넣어 주세요.", Toast.LENGTH_LONG).show()
                 }
             }
