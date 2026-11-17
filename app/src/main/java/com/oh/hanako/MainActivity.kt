@@ -94,6 +94,7 @@ class MainActivity : Activity() {
             textSize = 15f
             setPadding(0, 12, 0, 20)
         })
+
         status = TextView(this).apply {
             textSize = 14f
             setPadding(0, 8, 0, 16)
@@ -192,7 +193,11 @@ class MainActivity : Activity() {
                 }
             }
         })
-        setContentView(root)
+        val scrollView = android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
+        }
+        setContentView(scrollView)
         updateOverlayStatus()
         updateEngineStatus()
     }
