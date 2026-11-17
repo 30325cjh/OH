@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.app.DatePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -14,12 +16,14 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import java.util.Calendar
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var engineStatus: TextView
     private var ageVerifiedThisLaunch = false
+    private var lastOnnxInspection = ""
     @Volatile private var isModelInstalling = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -156,8 +160,23 @@ class MainActivity : Activity() {
                 status.text = "ONNX 그래프를 하나씩 여는 중... 잠시 기다려 주세요."
                 Thread {
                     val result = OnnxModelInspector.inspect(this@MainActivity)
-                    runOnUiThread { if (::status.isInitialized) status.text = result }
+                    runOnUiThread {
+                        lastOnnxInspection = result
+                        if (::status.isInitialized) status.text = result
+                    }
                 }.start()
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "ONNX 검사 결과 복사"
+            setOnClickListener {
+                if (lastOnnxInspection.isBlank()) {
+                    Toast.makeText(this@MainActivity, "먼저 ONNX 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Irodori ONNX 검사 결과", lastOnnxInspection))
+                    Toast.makeText(this@MainActivity, "검사 결과를 복사했어요. 채팅창에 붙여 넣어 주세요.", Toast.LENGTH_LONG).show()
+                }
             }
         })
         root.addView(Button(this).apply {
