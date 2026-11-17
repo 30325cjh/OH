@@ -1,6 +1,7 @@
 package com.oh.hanako
 
 import android.content.Context
+import android.app.ActivityManager
 import com.mnn.sdk.MNNEngine
 import com.mnn.sdk.MNNConfig
 
