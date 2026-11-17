@@ -25,4 +25,6 @@ android {
 dependencies {
     // MNN 3.6.1 native runtime + generic Android inference bridge.
     implementation project(':mnn-sdk')
+    // ONNX Runtime: inspect and execute the lightweight conditioning graphs.
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
 }
