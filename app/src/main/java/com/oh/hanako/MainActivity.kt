@@ -96,7 +96,7 @@ class MainActivity : Activity() {
         })
 
         root.addView(Button(this).apply {
-            text = "ONNX 검사 결과 복사"
+            text = "검사 결과 복사"
             setOnClickListener {
                 if (lastOnnxInspection.isBlank()) {
                     Toast.makeText(this@MainActivity, "먼저 ONNX 구조 검사를 실행해 주세요.", Toast.LENGTH_SHORT).show()
@@ -155,6 +155,19 @@ class MainActivity : Activity() {
                 Thread {
                     val result = MnnRuntime.checkModelFiles(this@MainActivity)
                     runOnUiThread { if (::status.isInitialized) status.text = result }
+                }.start()
+            }
+        })
+        root.addView(Button(this).apply {
+            text = "Irodori MNN 입출력 구조 검사"
+            setOnClickListener {
+                status.text = "MNN 그래프 입출력 정보를 확인 중... 모델을 하나씩 검사합니다."
+                Thread {
+                    val result = MnnRuntime.inspectModelGraphs(this@MainActivity)
+                    runOnUiThread {
+                        lastOnnxInspection = result
+                        if (::status.isInitialized) status.text = result
+                    }
                 }.start()
             }
         })
